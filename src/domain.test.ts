@@ -1,11 +1,298 @@
-import {describe,it,expect} from 'vitest';
-import {canonicalize,createSnapshot,defaultPeriod,emptyDB,importRows,makeBody,metrics,now,parseDate,ratio,uid,validateBackup,validateResults} from './domain';
-import type {ImportRow} from './domain';
-import {readCSV,mapRows} from './csv';
-import {safeCell,csvText} from './export';
-export function fixture(){const d=emptyDB();const p={id:'p1',name:'驗證專案',brand:'測試品牌',brandAliases:[],product:'測試產品',partners:'',releaseAt:parseDate('2026-11-10'),periodStart:defaultPeriod('2026-11-10').start,periodEnd:defaultPeriod('2026-11-10').end,timezone:'Asia/Taipei',status:'active' as const,releaseId:'r1',messageSetId:'m1',searchTerms:'',excludeTerms:'',trackedMedia:[],quote:'測試引言',createdAt:now(),updatedAt:now()};d.projects.push(p);d.releases.push({id:'r1',projectId:p.id,version:1,title:'測試標題',body:'這是功能測試內容。',createdAt:now()});d.messageSets.push({id:'m1',projectId:p.id,version:1,messages:[{id:'key1',text:'免卡服務',requiredConditions:'免用實體卡',synonyms:'',exactFacts:''}],createdAt:now()});return {d,p};}
-const row=(i=0):ImportRow=>({title:'測試品牌推出免卡服務',url:`https://example.com/article?id=${i}`,publisher:'示意媒體',published_at:'2026-11-10 10:00',summary:'',body:'測試品牌提供免用實體卡的服務。',body_status:'full',original_publisher:'',author:'',source_channel:'CSV'});
-export function sample20(){const {d,p}=fixture();importRows(d,p.id,Array.from({length:20},(_,i)=>({...row(i),...(i>=15?{body:'',body_status:'title_only'}:{})})));for(const l of d.links)l.inclusionStatus='included';d.articles.slice(0,15).forEach((a,i)=>{const b=d.bodies.find(b=>b.id===a.bodyId)!;d.reviews.push({id:uid(),projectId:p.id,articleId:a.id,analysisId:'',releaseId:p.releaseId,messageSetId:p.messageSetId,bodyId:b.id,results:[{messageId:'key1',messageVersion:1,status:i<9?'full':i<12?'partial':'absent',reason:'已人工檢視',evidenceQuotes:i<12?[b.body]:[],paragraphIds:i<12?['p1']:[],reviewedBodyVersionId:b.id,coverage:'全文',undeterminedReason:''}],quoteAdoption:'none',discrepancies:[],reviewer:'測試人員',reason:'功能驗證',reviewedAt:now(),originalResult:[]});});return {d,p};}
-describe('統計與期間',()=>{it('20/15/9/3 對應完整60%、部分20%、覆蓋75%',()=>{const {d,p}=sample20();const m=metrics(d,p);expect([m.N,m.B,m.messages[0].full,m.messages[0].partial]).toEqual([20,15,9,3]);expect(ratio(9,15)).toBe('60%');expect(ratio(3,15)).toBe('20%');expect(ratio(m.B,m.N)).toBe('75%');expect(m.missingBody).toBe(5);});it('標題限定稿可增加 N，不能增加 B',()=>{const {d,p}=fixture();importRows(d,p.id,[{...row(),body:'',body_status:'title_only'}]);d.links[0].inclusionStatus='included';expect(metrics(d,p)).toMatchObject({N:1,B:0,missingBody:1});});it('日期不明或觀測期外不進 N，零分母不顯示0%',()=>{const {d,p}=fixture();importRows(d,p.id,[{...row(),published_at:''},{...row(1),published_at:'2026-12-01'}]);d.links.forEach(l=>l.inclusionStatus='included');expect(metrics(d,p)).toMatchObject({N:0,B:0,missingDate:1});expect(ratio(0,0)).toBe('尚無足夠資料');});it('台北首日算第1日，到第14日23:59:59',()=>{const period=defaultPeriod('2026-11-10');expect(period.start).toBe('2026-11-09T16:00:00.000Z');expect(period.end).toBe('2026-11-23T15:59:59.999Z');expect(parseDate('2026/11/10 10:00')).toBe('2026-11-10T02:00:00.000Z');});it('同文兩網站保留2篇露出與1群',()=>{const {d,p}=fixture();importRows(d,p.id,[row(),{...row(1),url:'https://other.example.org/article'}]);d.links.forEach(l=>{l.inclusionStatus='included';l.groupId='group1';});expect(metrics(d,p)).toMatchObject({N:2,groups:1,websites:2});d.links.forEach(l=>l.groupId='');expect(metrics(d,p).groups).toBe(2);});});
-describe('匯入與網址安全',()=>{it('CSV 重複匯入篇數不變，保留追蹤來源',()=>{const {d,p}=fixture();const r={...row(),url:'https://example.com/article?id=1&utm_source=feed#test'};importRows(d,p.id,[r]);const outcome=importRows(d,p.id,[{...r,url:'https://example.com/article?fbclid=abc&id=1',source_channel:'RSS'}]);expect(d.articles).toHaveLength(1);expect(d.links).toHaveLength(1);expect(d.articles[0].discoverySources).toEqual(['CSV','RSS']);expect(outcome.updated).toBe(1);});it('同標題、不同識別參數不合併',()=>{const {d,p}=fixture();importRows(d,p.id,[row(),row(1)]);expect(d.articles).toHaveLength(2);expect(canonicalize('https://x.example/?article=42&utm_campaign=a')).toBe('https://x.example/?article=42');});it('缺網址指紋提示且可人工保留',()=>{const {d,p}=fixture();importRows(d,p.id,[{...row(),url:''}]);expect(importRows(d,p.id,[{...row(),url:''}]).skipped).toBe(1);expect(importRows(d,p.id,[{...row(),url:''}],false).added).toBe(1);});it('正確解析中文標頭、多行與引號逗號',()=>{const csv='標題,網址,內文\r\n"測試,標題",https://example.com,"第一行\n第二行"';const parsed=readCSV(csv);const rows=mapRows(parsed.raw,parsed.mapping);expect(rows[0].title).toBe('測試,標題');expect(rows[0].body).toBe('第一行\n第二行');});it('阻擋危險來源與 CSV 公式',()=>{expect(()=>canonicalize('javascript:alert(1)')).toThrow();expect(()=>canonicalize('https://user:pass@example.com')).toThrow();expect(safeCell('=HYPERLINK("a")')).toMatch(/^'/);expect(safeCell('  @SUM(A1)')).toMatch(/^'/);});});
-describe('證據與版本',()=>{it('證據不存在或段落不符不得成功',()=>{const {d,p}=sample20();const a=d.articles[0],body=d.bodies[0],set=d.messageSets[0];const results=structuredClone(d.reviews[0].results);expect(()=>validateResults(results,set,body)).not.toThrow();results[0].evidenceQuotes=['虛構證據'];expect(()=>validateResults(results,set,body)).toThrow('證據原句');results[0].evidenceQuotes=[body.body];results[0].paragraphIds=['p99'];expect(()=>validateResults(results,set,body)).toThrow('證據段落');expect(a.bodyId).toBe(body.id);});it('不能將不完整內文判為未採用',()=>{const {d}=sample20();const body=makeBody('a','b',1,'只有摘要','','summary_only');const results=[{...d.reviews[14].results[0],reviewedBodyVersionId:'b'}];expect(()=>validateResults(results,d.messageSets[0],body)).toThrow('完整內文');});it('改內文後舊覆核不進 B，快照不變',()=>{const {d,p}=sample20();const snapshot=createSnapshot(d,p,'原始觀察');const csvBefore=csvText(snapshot);const a=d.articles[0];const b=makeBody(a.id,uid(),2,'','更新後內文','full');d.bodies.push(b);a.bodyId=b.id;expect(metrics(d,p).B).toBe(14);expect(metrics(d,p).stale).toBe(1);expect(snapshot.frozenMetrics.B).toBe(15);expect(csvText(snapshot)).toBe(csvBefore);});it('核心訊息版本更新後不能沿用舊判斷',()=>{const {d,p}=sample20();d.messageSets.push({...structuredClone(d.messageSets[0]),id:'m2',version:2});p.messageSetId='m2';expect(metrics(d,p).B).toBe(0);expect(d.reviews).toHaveLength(15);});it('AI 重跑不改人工結果',()=>{const {d,p}=sample20();d.analyses.push({id:uid(),projectId:p.id,articleId:d.articles[0].id,bodyId:d.articles[0].bodyId,releaseId:p.releaseId,messageSetId:p.messageSetId,runStatus:'completed',modelVersion:'test',analyzedAt:now(),results:[],discrepancies:[],quoteAdoption:'undetermined'});expect(metrics(d,p).messages[0].full).toBe(9);});it('備份還原完整重現快照與統計',()=>{const {d,p}=sample20();d.reports.push(createSnapshot(d,p,'快照摘要'));const restored=validateBackup(JSON.parse(JSON.stringify(d)));expect(restored).toEqual(d);expect(metrics(restored,restored.projects[0])).toEqual(metrics(d,p));expect(()=>validateBackup({...d,articles:[]})).toThrow();});});
+import { describe, it, expect } from "vitest";
+import {
+  canonicalize,
+  createSnapshot,
+  defaultPeriod,
+  emptyDB,
+  importRows,
+  makeBody,
+  metrics,
+  now,
+  parseDate,
+  ratio,
+  uid,
+  validateBackup,
+  validateResults,
+} from "./domain";
+import type { ImportRow } from "./domain";
+import { readCSV, mapRows } from "./csv";
+import { safeCell, csvText } from "./export";
+export function fixture() {
+  const d = emptyDB();
+  const p = {
+    id: "p1",
+    name: "驗證專案",
+    brand: "測試品牌",
+    brandAliases: [],
+    product: "測試產品",
+    partners: "",
+    releaseAt: parseDate("2026-11-10"),
+    periodStart: defaultPeriod("2026-11-10").start,
+    periodEnd: defaultPeriod("2026-11-10").end,
+    timezone: "Asia/Taipei",
+    status: "active" as const,
+    releaseId: "r1",
+    messageSetId: "m1",
+    searchTerms: "",
+    excludeTerms: "",
+    trackedMedia: [],
+    quote: "測試引言",
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  d.projects.push(p);
+  d.releases.push({
+    id: "r1",
+    projectId: p.id,
+    version: 1,
+    title: "測試標題",
+    body: "這是功能測試內容。",
+    createdAt: now(),
+  });
+  d.messageSets.push({
+    id: "m1",
+    projectId: p.id,
+    version: 1,
+    messages: [
+      {
+        id: "key1",
+        text: "免卡服務",
+        requiredConditions: "免用實體卡",
+        synonyms: "",
+        exactFacts: "",
+      },
+    ],
+    createdAt: now(),
+  });
+  return { d, p };
+}
+const row = (i = 0): ImportRow => ({
+  title: "測試品牌推出免卡服務",
+  url: `https://example.com/article?id=${i}`,
+  publisher: "示意媒體",
+  published_at: "2026-11-10 10:00",
+  summary: "",
+  body: "測試品牌提供免用實體卡的服務。",
+  body_status: "full",
+  original_publisher: "",
+  author: "",
+  source_channel: "CSV",
+});
+export function sample20() {
+  const { d, p } = fixture();
+  importRows(
+    d,
+    p.id,
+    Array.from({ length: 20 }, (_, i) => ({
+      ...row(i),
+      ...(i >= 15 ? { body: "", body_status: "title_only" } : {}),
+    })),
+  );
+  for (const l of d.links) l.inclusionStatus = "included";
+  d.articles.slice(0, 15).forEach((a, i) => {
+    const b = d.bodies.find((b) => b.id === a.bodyId)!;
+    d.reviews.push({
+      id: uid(),
+      projectId: p.id,
+      articleId: a.id,
+      analysisId: "",
+      releaseId: p.releaseId,
+      messageSetId: p.messageSetId,
+      bodyId: b.id,
+      results: [
+        {
+          messageId: "key1",
+          messageVersion: 1,
+          status: i < 9 ? "full" : i < 12 ? "partial" : "absent",
+          reason: "已人工檢視",
+          evidenceQuotes: i < 12 ? [b.body] : [],
+          paragraphIds: i < 12 ? ["p1"] : [],
+          reviewedBodyVersionId: b.id,
+          coverage: "全文",
+          undeterminedReason: "",
+        },
+      ],
+      quoteAdoption: "none",
+      discrepancies: [],
+      reviewer: "測試人員",
+      reason: "功能驗證",
+      reviewedAt: now(),
+      originalResult: [],
+    });
+  });
+  return { d, p };
+}
+describe("統計與期間", () => {
+  it("20/15/9/3 對應完整60%、部分20%、覆蓋75%", () => {
+    const { d, p } = sample20();
+    const m = metrics(d, p);
+    expect([m.N, m.B, m.messages[0].full, m.messages[0].partial]).toEqual([
+      20, 15, 9, 3,
+    ]);
+    expect(ratio(9, 15)).toBe("60%");
+    expect(ratio(3, 15)).toBe("20%");
+    expect(ratio(m.B, m.N)).toBe("75%");
+    expect(m.missingBody).toBe(5);
+  });
+  it("標題限定稿可增加 N，不能增加 B", () => {
+    const { d, p } = fixture();
+    importRows(d, p.id, [{ ...row(), body: "", body_status: "title_only" }]);
+    d.links[0].inclusionStatus = "included";
+    expect(metrics(d, p)).toMatchObject({ N: 1, B: 0, missingBody: 1 });
+  });
+  it("日期不明或觀測期外不進 N，零分母不顯示0%", () => {
+    const { d, p } = fixture();
+    importRows(d, p.id, [
+      { ...row(), published_at: "" },
+      { ...row(1), published_at: "2026-12-01" },
+    ]);
+    d.links.forEach((l) => (l.inclusionStatus = "included"));
+    expect(metrics(d, p)).toMatchObject({ N: 0, B: 0, missingDate: 1 });
+    expect(ratio(0, 0)).toBe("尚無足夠資料");
+  });
+  it("台北首日算第1日，到第14日23:59:59", () => {
+    const period = defaultPeriod("2026-11-10");
+    expect(period.start).toBe("2026-11-09T16:00:00.000Z");
+    expect(period.end).toBe("2026-11-23T15:59:59.999Z");
+    expect(parseDate("2026/11/10 10:00")).toBe("2026-11-10T02:00:00.000Z");
+  });
+  it("同文兩網站保留2篇露出與1群", () => {
+    const { d, p } = fixture();
+    importRows(d, p.id, [
+      row(),
+      { ...row(1), url: "https://other.example.org/article" },
+    ]);
+    d.links.forEach((l) => {
+      l.inclusionStatus = "included";
+      l.groupId = "group1";
+    });
+    expect(metrics(d, p)).toMatchObject({ N: 2, groups: 1, websites: 2 });
+    d.links.forEach((l) => (l.groupId = ""));
+    expect(metrics(d, p).groups).toBe(2);
+  });
+});
+describe("匯入與網址安全", () => {
+  it("CSV 重複匯入篇數不變，保留追蹤來源", () => {
+    const { d, p } = fixture();
+    const r = {
+      ...row(),
+      url: "https://example.com/article?id=1&utm_source=feed#test",
+    };
+    importRows(d, p.id, [r]);
+    const outcome = importRows(d, p.id, [
+      {
+        ...r,
+        url: "https://example.com/article?fbclid=abc&id=1",
+        source_channel: "RSS",
+      },
+    ]);
+    expect(d.articles).toHaveLength(1);
+    expect(d.links).toHaveLength(1);
+    expect(d.articles[0].discoverySources).toEqual(["CSV", "RSS"]);
+    expect(outcome.updated).toBe(1);
+  });
+  it("同標題、不同識別參數不合併", () => {
+    const { d, p } = fixture();
+    importRows(d, p.id, [row(), row(1)]);
+    expect(d.articles).toHaveLength(2);
+    expect(canonicalize("https://x.example/?article=42&utm_campaign=a")).toBe(
+      "https://x.example/?article=42",
+    );
+  });
+  it("缺網址指紋提示且可人工保留", () => {
+    const { d, p } = fixture();
+    importRows(d, p.id, [{ ...row(), url: "" }]);
+    expect(importRows(d, p.id, [{ ...row(), url: "" }]).skipped).toBe(1);
+    expect(importRows(d, p.id, [{ ...row(), url: "" }], false).added).toBe(1);
+  });
+  it("正確解析中文標頭、多行與引號逗號", () => {
+    const csv =
+      '標題,網址,內文\r\n"測試,標題",https://example.com,"第一行\n第二行"';
+    const parsed = readCSV(csv);
+    const rows = mapRows(parsed.raw, parsed.mapping);
+    expect(rows[0].title).toBe("測試,標題");
+    expect(rows[0].body).toBe("第一行\n第二行");
+  });
+  it("阻擋危險來源與 CSV 公式", () => {
+    expect(() => canonicalize("javascript:alert(1)")).toThrow();
+    expect(() => canonicalize("https://user:pass@example.com")).toThrow();
+    expect(safeCell('=HYPERLINK("a")')).toMatch(/^'/);
+    expect(safeCell("  @SUM(A1)")).toMatch(/^'/);
+  });
+});
+describe("證據與版本", () => {
+  it("證據不存在或段落不符不得成功", () => {
+    const { d, p } = sample20();
+    const a = d.articles[0],
+      body = d.bodies[0],
+      set = d.messageSets[0];
+    const results = structuredClone(d.reviews[0].results);
+    expect(() => validateResults(results, set, body)).not.toThrow();
+    results[0].evidenceQuotes = ["虛構證據"];
+    expect(() => validateResults(results, set, body)).toThrow("證據原句");
+    results[0].evidenceQuotes = [body.body];
+    results[0].paragraphIds = ["p99"];
+    expect(() => validateResults(results, set, body)).toThrow("證據段落");
+    expect(a.bodyId).toBe(body.id);
+  });
+  it("不能將不完整內文判為未採用", () => {
+    const { d } = sample20();
+    const body = makeBody("a", "b", 1, "只有摘要", "", "summary_only");
+    const results = [
+      { ...d.reviews[14].results[0], reviewedBodyVersionId: "b" },
+    ];
+    expect(() => validateResults(results, d.messageSets[0], body)).toThrow(
+      "完整內文",
+    );
+  });
+  it("改內文後舊覆核不進 B，快照不變", () => {
+    const { d, p } = sample20();
+    const snapshot = createSnapshot(d, p, "原始觀察");
+    const csvBefore = csvText(snapshot);
+    const a = d.articles[0];
+    const b = makeBody(a.id, uid(), 2, "", "更新後內文", "full");
+    d.bodies.push(b);
+    a.bodyId = b.id;
+    expect(metrics(d, p).B).toBe(14);
+    expect(metrics(d, p).stale).toBe(1);
+    expect(snapshot.frozenMetrics.B).toBe(15);
+    expect(csvText(snapshot)).toBe(csvBefore);
+  });
+  it("核心訊息版本更新後不能沿用舊判斷", () => {
+    const { d, p } = sample20();
+    d.messageSets.push({
+      ...structuredClone(d.messageSets[0]),
+      id: "m2",
+      version: 2,
+    });
+    p.messageSetId = "m2";
+    expect(metrics(d, p).B).toBe(0);
+    expect(d.reviews).toHaveLength(15);
+  });
+  it("AI 重跑不改人工結果", () => {
+    const { d, p } = sample20();
+    d.analyses.push({
+      id: uid(),
+      projectId: p.id,
+      articleId: d.articles[0].id,
+      bodyId: d.articles[0].bodyId,
+      releaseId: p.releaseId,
+      messageSetId: p.messageSetId,
+      runStatus: "completed",
+      modelVersion: "test",
+      analyzedAt: now(),
+      results: [],
+      discrepancies: [],
+      quoteAdoption: "undetermined",
+    });
+    expect(metrics(d, p).messages[0].full).toBe(9);
+  });
+  it("備份還原完整重現快照與統計", () => {
+    const { d, p } = sample20();
+    d.reports.push(createSnapshot(d, p, "快照摘要"));
+    const restored = validateBackup(JSON.parse(JSON.stringify(d)));
+    expect(restored).toEqual(d);
+    expect(metrics(restored, restored.projects[0])).toEqual(metrics(d, p));
+    expect(() => validateBackup({ ...d, articles: [] })).toThrow();
+  });
+});
