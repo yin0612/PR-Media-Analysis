@@ -1,0 +1,19 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "pr-media-analysis-api",
+  "main": "index.ts",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": true,
+  "ai": {"binding": "AI"},
+  "ratelimits": [{"name":"RATE_LIMITER","namespace_id":"1001","simple":{"limit":10,"period":60}}],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://yin0612.github.io,http://127.0.0.1:5173",
+    "ALLOWED_EMAILS": "",
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "AI_API_BASE": "https://api.openai.com/v1",
+    "EXTRACT_ALLOWED_HOSTS": "www.cna.com.tw,cna.com.tw,udn.com,money.udn.com,news.ltn.com.tw,www.chinatimes.com,www.ettoday.net,www.nownews.com"
+  },
+  "observability": {"enabled":false}
+}

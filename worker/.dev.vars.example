@@ -1,0 +1,4 @@
+# Local-only secrets. Copy to worker/.dev.vars (ignored by Git).
+SERVICE_ACCESS_KEY=replace-with-a-long-random-workspace-access-code
+# Optional: use your own OpenAI-compatible service instead of Workers AI.
+# AI_API_KEY=
