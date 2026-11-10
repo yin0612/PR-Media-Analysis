@@ -1,0 +1,413 @@
+.simple-app {
+  overflow-x: clip;
+  min-height: 100vh;
+  background: #f5f7fa;
+  color: #263c55;
+}
+.simple-top {
+  height: 76px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 max(24px, calc((100vw - 1180px) / 2));
+  gap: 20px;
+}
+.simple-top > a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #26496b;
+}
+.simple-top > .text-button {
+  font-size: 12px;
+  color: #8594a6;
+}
+.simple-main {
+  max-width: 1228px;
+  margin: auto;
+  padding: 38px 24px 0;
+}
+.simple-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+.simple-heading h1 {
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.simple-heading p {
+  font-size: 13px;
+  color: #7e8fa2;
+  margin-top: 8px;
+}
+.simple-heading > .secondary {
+  font-size: 12px;
+}
+.simple-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 24px;
+}
+.simple-list-select {
+  max-width: 560px;
+  flex: 1;
+  min-width: 180px;
+}
+.simple-list-select > span {
+  display: block;
+  font-size: 12px;
+  color: #8092a7;
+  margin-bottom: 8px;
+}
+.simple-list-select select {
+  width: 100%;
+  font-size: 14px;
+  padding: 12px;
+}
+.simple-controls .primary,
+.simple-controls .secondary {
+  font-size: 12px;
+  padding: 12px 15px;
+}
+.simple-sheet {
+  background: #fff;
+  border: 1px solid #dfe7f0;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.simple-sheet-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 27px 25px;
+}
+.simple-sheet-heading h2 {
+  font-size: 18px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.simple-sheet-heading p {
+  font-size: 12px;
+  color: #8090a3;
+  margin-top: 7px;
+}
+.simple-sheet-heading p strong {
+  color: #395a7c;
+  font-size: 15px;
+  margin: 0 3px;
+}
+.simple-sheet-heading p span {
+  font-size: 10px;
+  color: #a0acb8;
+  margin-left: 5px;
+}
+.simple-sheet-heading .search input {
+  font-size: 12px;
+  width: 180px;
+}
+.simple-table {
+  font-size: 13px;
+  min-width: 760px;
+  table-layout: fixed;
+}
+.simple-table th {
+  font-size: 12px;
+  padding: 15px 18px;
+  color: #6d829a;
+  background: #edf3f9;
+}
+.simple-table td {
+  padding: 18px;
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.simple-table th:first-child {
+  width: 65px;
+}
+.simple-table th:nth-child(2) {
+  width: 115px;
+}
+.simple-table th:nth-child(3) {
+  width: 150px;
+}
+.simple-table th:nth-child(4) {
+  width: 150px;
+}
+.simple-table th:last-child {
+  width: 80px;
+}
+.simple-table td:first-child {
+  color: #95a3b3;
+  text-align: center;
+}
+.simple-table td:nth-child(2) {
+  font-size: 11px;
+  color: #8292a5;
+}
+.simple-table td:nth-child(3) {
+  font-weight: 500;
+}
+.simple-table td a {
+  color: #2e6597;
+  display: inline;
+  line-height: 1.9;
+}
+.simple-table td a:hover {
+  text-decoration: underline;
+}
+.simple-table td a svg {
+  margin-left: 6px;
+  vertical-align: middle;
+  color: #99afc4;
+}
+.simple-table tbody tr:hover {
+  background: #fafcfe;
+}
+.simple-row-actions {
+  display: flex;
+  gap: 9px;
+}
+.simple-row-actions button {
+  background: transparent;
+  color: #a0aebd;
+  padding: 4px;
+  border-radius: 4px;
+}
+.simple-row-actions button:hover {
+  background: #e8eff7;
+  color: #345f8b;
+}
+.simple-table-footer {
+  font-size: 11px;
+  color: #97a5b6;
+  padding: 17px 24px;
+  background: #fcfdff;
+}
+.simple-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 55px 20px 65px;
+  border-top: 1px solid #edf1f6;
+  color: #8a9fb6;
+}
+.simple-empty > svg {
+  margin-bottom: 23px;
+}
+.simple-empty h3 {
+  color: #4e6b8a;
+  font-size: 19px;
+  font-weight: 500;
+}
+.simple-empty p {
+  font-size: 12px;
+  line-height: 2;
+  margin: 14px 0 23px;
+  color: #8d9db0;
+}
+.simple-empty small {
+  font-size: 10px;
+  color: #a1aebd;
+  margin-top: 15px;
+}
+.simple-notice {
+  background: #edf5f4;
+  border: 1px solid #d9e8e4;
+  color: #5d817c;
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin: 15px 0;
+}
+.simple-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 0 35px;
+  font-size: 10px;
+  color: #98a6b6;
+}
+.simple-footer .text-button {
+  font-size: 10px;
+  color: #8197ae;
+}
+.simple-footer .button-row {
+  gap: 20px;
+}
+.simple-modal {
+  width: 760px;
+}
+.simple-hint,
+.simple-import-summary {
+  font-size: 12px;
+  color: #8a9cb0;
+  line-height: 1.9;
+}
+.simple-import-summary {
+  padding: 13px 0;
+}
+.simple-no-results {
+  text-align: center;
+  padding: 35px;
+  color: #99a7b7;
+  font-size: 13px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.simple-app .modal .field {
+  font-size: 12px;
+}
+.simple-app .modal input,
+.simple-app .modal textarea,
+.simple-app .modal select {
+  font-size: 13px;
+}
+.simple-app .modal .primary {
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .simple-main {
+    padding: 25px 16px 0;
+  }
+  .simple-top {
+    height: 66px;
+    padding: 0 18px;
+  }
+  .simple-top > a {
+    font-size: 16px;
+  }
+  .simple-top > .text-button {
+    font-size: 11px;
+  }
+  .simple-heading {
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .simple-heading h1 {
+    font-size: 21px;
+    line-height: 1.7;
+  }
+  .simple-heading p {
+    font-size: 11px;
+    line-height: 1.9;
+  }
+  .simple-heading > .secondary {
+    font-size: 10px;
+    padding: 9px 10px;
+    margin-top: 5px;
+  }
+  .simple-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+  .simple-list-select {
+    max-width: none;
+  }
+  .simple-controls > .button-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .simple-controls .primary,
+  .simple-controls .secondary {
+    font-size: 10px;
+    padding: 11px 9px;
+    gap: 5px;
+  }
+  .simple-controls svg {
+    width: 14px;
+  }
+  .simple-sheet-heading {
+    padding: 22px 18px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .simple-sheet-heading h2 {
+    font-size: 16px;
+  }
+  .simple-sheet-heading p {
+    font-size: 11px;
+  }
+  .simple-sheet-heading .search input {
+    width: 100%;
+    padding: 10px 0;
+    font-size: 11px;
+  }
+  .simple-sheet-heading .search {
+    width: 100%;
+  }
+  .simple-table {
+    min-width: 720px;
+  }
+  .simple-table td {
+    padding: 16px 13px;
+  }
+  .simple-table th {
+    padding: 14px 13px;
+  }
+  .simple-table th:nth-child(3) {
+    width: 120px;
+  }
+  .simple-table th:nth-child(4) {
+    width: 120px;
+  }
+  .simple-table th:first-child {
+    width: 52px;
+  }
+  .simple-table th:nth-child(2) {
+    width: 105px;
+  }
+  .simple-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 18px;
+    font-size: 9px;
+  }
+  .simple-empty {
+    padding: 40px 17px 48px;
+  }
+  .simple-empty h3 {
+    font-size: 16px;
+  }
+  .simple-empty p {
+    font-size: 11px;
+  }
+  .simple-notice {
+    font-size: 11px;
+  }
+  .simple-app .modal-heading h2 {
+    font-size: 17px;
+  }
+}

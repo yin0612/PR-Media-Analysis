@@ -66,7 +66,9 @@ import { ArticleForm, Field, ProjectForm, ReviewForm } from "./forms";
 import { fields, fieldLabels, mapRows, readCSV } from "./csv";
 import { download, exportCSV, exportWord } from "./export";
 import { analyze, request, summarize } from "./api";
-type Page = "projects" | "overview" | "articles" | "reports" | "settings";
+import SimpleWorkspace from "./SimpleWorkspace";
+type Page =
+  "simple" | "projects" | "overview" | "articles" | "reports" | "settings";
 type Modal =
   | { type: "project"; id?: string }
   | { type: "article"; id?: string }
@@ -76,9 +78,16 @@ type Modal =
 function route() {
   const [page, id] = location.hash.replace(/^#\/?/, "").split("/");
   return {
-    page: (["overview", "articles", "reports", "settings"].includes(page)
+    page: ([
+      "simple",
+      "projects",
+      "overview",
+      "articles",
+      "reports",
+      "settings",
+    ].includes(page)
       ? page
-      : "projects") as Page,
+      : "simple") as Page,
     id: id || "",
   };
 }
@@ -498,6 +507,7 @@ export default function App() {
       `${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase()),
   );
   const titles: Record<Page, string> = {
+    simple: "新聞露出清單",
     projects: "發稿專案",
     overview: "成效總覽",
     articles: "露出清單",
@@ -512,9 +522,21 @@ export default function App() {
         <p>{saveState}</p>
       </div>
     );
+  if (view.page === "simple")
+    return (
+      <SimpleWorkspace
+        db={db}
+        saveState={saveState}
+        onCommit={commit}
+        onAdvanced={() => nav("projects")}
+      />
+    );
   return (
     <div className="app">
       <aside className={`sidebar ${menu ? "open" : ""}`}>
+        <button className="settings-link" onClick={() => nav("simple")}>
+          ← 返回簡易露出清單
+        </button>
         <a className="brand" href="#/projects">
           <div className="brand-mark">
             <Radio size={24} />
