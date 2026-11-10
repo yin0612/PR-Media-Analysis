@@ -91,6 +91,13 @@ if (command === "create") {
     await api(path, "POST", { name: "VITE_API_URL", value: args[1] });
   }
   console.log("Public backend URL configured");
+} else if (command === "dispatch-news") {
+  await api(
+    "/repos/" + repo + "/actions/workflows/update-news.yml/dispatches",
+    "POST",
+    { ref: "main" },
+  );
+  console.log("News collection workflow dispatched");
 } else if (command === "runs") {
   const runs = await api("/repos/" + repo + "/actions/runs?per_page=3");
   console.log(

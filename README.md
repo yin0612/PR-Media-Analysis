@@ -6,9 +6,23 @@
 - 原始碼：<https://github.com/yin0612/PR-Media-Analysis>
 - Cloudflare 後端：<https://pr-media-analysis-api.media-monitoring-worker.workers.dev>
 
-## 日常使用：簡易新聞露出清單
+## 日常使用：自動新聞露出清單
 
-首頁預設開啟[簡易清單](https://yin0612.github.io/PR-Media-Analysis/#/simple)。只顯示 NO.、日期、媒體、記者及可點擊的新聞標題，不必先填寫新聞稿、核心訊息或執行 AI。
+首頁現在會自動載入真實新聞，不需先建立專案、匯入 Excel 或輸入 AI 存取碼。預設「藍新金流最新新聞」查看近 30 天資料；「AFTEE 合作露出」查看 2026-04-29 至 2026-05-14 的歷史搜尋結果。也能輸入公開關鍵字、調整日期並下載 Excel。
+
+來源為既有 MediaMonitoring 的真實搜尋介面及 Google News RSS。自動結果是候選新聞，不直接等同已確認的發稿成果。RSS 不保證涵蓋完整歷史；沒有記者欄位的來源顯示「來源未提供」。藍新品牌預設排除易混淆的藍新資訊。Google 聚合連結另有標示，不以同標題強行合併原站與聚合頁。
+
+自動新聞基本資料存於 Cloudflare Workers KV，跨瀏覽器可讀。網頁每 5 分鐘讀取；快取超過 30 分鐘時補抓，GitHub Actions 每小時第 37 分鐘收集預設主題（排程可能延後）。部分來源失敗仍保留最後成功資料。原 Excel 與人工資料仍保存在原瀏覽器，不自動上傳。
+
+Cloudflare 執行環境直接取得 Google RSS 曾回應 503，因此 GitHub 收集器取得 RSS 後，以專用 `NEWS_INGEST_KEY` 傳入 `/api/news/ingest`，由後端驗證內容、日期與主題再寫入 KV。此憑證只設定於 GitHub Actions Secrets 與 Worker Secrets，不能用來呼叫 AI；前端不持有。MediaMonitoring 使用同帳號服務綁定讀取，沒有修改原站。
+
+本次因帳號 D1 免費寫入額度與 Worker Cron 名額已滿，使用 KV 與 GitHub 排程，沒有新增付費方案。GitHub 可能因來源限制、排程延遲或公開儲存庫長期無活動而暫停排程；頁面須顯示最後來源更新時間，而不是保證每小時準點到齊。
+
+修改企畫與驗收規格見 [PR_MEDIA_SIMPLIFICATION_PLAN.md](PR_MEDIA_SIMPLIFICATION_PLAN.md)。
+
+## 手動整理：我的 Excel 清單
+
+從首頁右上角進入「我的 Excel 清單」。保留 NO.、日期、媒體、記者及可點擊的新聞標題，不必先填寫新聞稿、核心訊息或執行 AI。
 
 1. 按「匯入 Excel」，選擇 `.xlsx` 或 CSV。
 2. 選擇工作表，確認前五筆預覽，再按「匯入這些新聞」。各分頁分開選擇，不自動混入其他舊資料。
@@ -142,6 +156,7 @@ node scripts/configure-access.mjs
 
 階段 B 已提供真實 Workers AI、歸屬建議、證據驗證、摘要與公開來源擷取。一次合成資料的真實 AI 呼叫不代表已達到規劃的 90% 歸屬精確率、85% 訊息一致率或 30% 省時目標。**仍需使用者提供 3 件歷史專案及至少 60 篇已標記報導完成正式驗收。**
 
-目前未實作：雲端同步、多人專案權限、自動監測、通知、跨案比較頁、MediaMonitoring／for_SoftWorld 自動資料介面。既有兩站維持不變，可透過 CSV／手動匯入銜接；未臆測其 API。
+目前未實作：私有工作資料雲端同步、多人專案權限、通知與跨案比較頁。自動新聞已串接 MediaMonitoring 與 Google News RSS；既有兩站維持不變。
 
 來源文件：[Vite GitHub Pages 部署](https://vite.dev/guide/static-deploy)、[Cloudflare Workers AI JSON Mode](https://developers.cloudflare.com/workers-ai/features/json-mode/)、[Worker 限流](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)、[Cloudflare Access JWT 驗證](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)。
+

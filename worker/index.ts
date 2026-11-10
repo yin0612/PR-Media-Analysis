@@ -10,12 +10,15 @@ import type {
   Snapshot,
 } from "../src/types";
 import { publicUrl, readLimited, verifyDNS } from "./security";
-interface Env {
+import { collectTopics, loadNews, newsQuery, ingestRSS } from "./news";
+import type { NewsEnv } from "./news";
+interface Env extends NewsEnv {
   ALLOWED_ORIGINS: string;
   ALLOWED_EMAILS: string;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   SERVICE_ACCESS_KEY?: string;
+  NEWS_INGEST_KEY?: string;
   AI?: {
     run: (
       model: string,
@@ -269,7 +272,18 @@ async function extract(raw: string, env: Env) {
   throw new HTTPError("來源重新導向過多，請手動補入內文", 422);
 }
 export default {
-  async fetch(req: Request, env: Env) {
+  async scheduled(
+    _event: unknown,
+    env: Env,
+    ctx: { waitUntil: (task: Promise<unknown>) => void },
+  ) {
+    ctx.waitUntil(collectTopics(env));
+  },
+  async fetch(
+    req: Request,
+    env: Env,
+    ctx?: { waitUntil: (task: Promise<unknown>) => void },
+  ) {
     const url = new URL(req.url);
     const origin = req.headers.get("Origin") || "";
     const allowed = env.ALLOWED_ORIGINS.split(",")
@@ -291,6 +305,63 @@ export default {
       }
       if (origin && !allowed.includes(origin))
         throw new HTTPError("不允許的前端來源", 403);
+      if (url.pathname === "/api/news/ingest" && req.method === "POST") {
+        const token =
+          req.headers.get("Authorization")?.replace(/^Bearer /i, "") || "";
+        if (
+          !env.NEWS_INGEST_KEY ||
+          !token ||
+          !(await secureEqual(token, env.NEWS_INGEST_KEY))
+        )
+          throw new HTTPError("新聞收集授權失敗", 401);
+        if (
+          !env.NEWS_LIMITER ||
+          !(await env.NEWS_LIMITER.limit({ key: "news-ingest" })).success
+        )
+          throw new HTTPError("更新過於頻繁", 429);
+        let payload;
+        try {
+          payload = JSON.parse(await readLimited(req, 1_500_000));
+        } catch {
+          throw new HTTPError("RSS 資料格式錯誤");
+        }
+        return json(
+          await ingestRSS(
+            env,
+            String(payload.topic || ""),
+            String(payload.xml || ""),
+          ),
+          200,
+          cors,
+        );
+      }
+      if (url.pathname === "/api/news" && req.method === "GET") {
+        if (!env.NEWS_CACHE || !env.NEWS_LIMITER)
+          throw new HTTPError("新聞串接尚未完成設定", 503);
+        if (
+          !(
+            await env.NEWS_LIMITER.limit({
+              key: req.headers.get("CF-Connecting-IP") || "unknown",
+            })
+          ).success
+        )
+          throw new HTTPError("搜尋次數較多，請稍後再試", 429);
+        let query;
+        try {
+          query = newsQuery(url);
+        } catch (e) {
+          throw new HTTPError((e as Error).message);
+        }
+        return json(
+          await loadNews(
+            env,
+            query,
+            ctx ? (task) => ctx.waitUntil(task) : undefined,
+          ),
+          200,
+          cors,
+        );
+      }
       if (url.pathname === "/api/health" && req.method === "GET")
         return json(
           {
@@ -336,6 +407,8 @@ export default {
       if (!env.RATE_LIMITER) throw new HTTPError("服務限流尚未設定", 503);
       if (!(await env.RATE_LIMITER.limit({ key: owner })).success)
         throw new HTTPError("已達每分鐘處理上限，請稍後重試", 429);
+      if (url.pathname === "/api/news/refresh" && req.method === "POST")
+        return json({ topics: await collectTopics(env) }, 200, cors);
       if (req.method !== "POST")
         throw new HTTPError("查無此介面；分析為同步回應，狀態由前端保存", 404);
       if (!req.headers.get("Content-Type")?.includes("application/json"))

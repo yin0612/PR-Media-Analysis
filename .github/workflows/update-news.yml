@@ -1,0 +1,22 @@
+name: Update automatic news
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: automatic-news
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/update-news.mjs
+        env:
+          NEWS_INGEST_KEY: ${{ secrets.NEWS_INGEST_KEY }}

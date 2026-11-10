@@ -37,6 +37,7 @@ import { download } from "./export";
 import { mapRows, readCSV } from "./csv";
 import { Field } from "./forms";
 import "./simple.css";
+import AutoNews from "./AutoNews";
 export default function SimpleWorkspace({
   db,
   saveState,
@@ -48,6 +49,7 @@ export default function SimpleWorkspace({
   onCommit: (d: Database) => void;
   onAdvanced: () => void;
 }) {
+  const [mode, setMode] = useState<"auto" | "local">("auto");
   const lists = db.projects.filter((p) => p.status === "active");
   const [selected, setSelected] = useState(lists[0]?.id || "");
   const project = lists.find((p) => p.id === selected) || lists[0];
@@ -201,6 +203,17 @@ export default function SimpleWorkspace({
   }
   const edited = db.articles.find((a) => a.id === editId);
   const chosen = sheets[sheetIndex];
+  if (mode === "auto")
+    return (
+      <AutoNews
+        apiUrl={
+          db.settings.apiUrl ||
+          import.meta.env.VITE_API_URL ||
+          "https://pr-media-analysis-api.media-monitoring-worker.workers.dev"
+        }
+        onLocal={() => setMode("local")}
+      />
+    );
   return (
     <div className="simple-app">
       <header className="simple-top">
@@ -208,9 +221,14 @@ export default function SimpleWorkspace({
           <FileSpreadsheet size={23} />
           新聞露出清單
         </a>
-        <button className="text-button" onClick={onAdvanced}>
-          進階分析 <ArrowRight size={14} />
-        </button>
+        <div className="button-row">
+          <button className="text-button" onClick={() => setMode("auto")}>
+            自動新聞
+          </button>
+          <button className="text-button" onClick={onAdvanced}>
+            進階分析 <ArrowRight size={14} />
+          </button>
+        </div>
       </header>
       <main className="simple-main">
         <div className="simple-heading">
