@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { canonicalize, taipeiDate } from "../src/domain";
+import { newsKeywords } from "../src/news-keywords";
 import { supplementalNewsSources } from "../src/news-sources";
 import type { MediaSource } from "../src/news-sources";
 import { defaultNewsTopics } from "../src/news-types";
@@ -70,18 +71,7 @@ function clean(v: unknown) {
     .trim();
 }
 export function relevant(title: string, summary: string, q: NewsQuery) {
-  const text = (title + " " + summary).toLowerCase();
-  if (q.topicId === "newebpay")
-    return (
-      (["藍新金流", "藍新科技", "newebpay"].some((t) => text.includes(t)) ||
-        (text.includes("藍新") &&
-          /ai\s*(導購|購物)|buytalk agent|代理式(商務|支付)/i.test(text))) &&
-      !text.includes("藍新資訊")
-    );
-  return q.query
-    .toLowerCase()
-    .split(/\s+/)
-    .every((t) => text.includes(t));
+  return newsKeywords(title + " " + summary, q.topicId, q.query).length > 0;
 }
 function allowedDate(date: string, q: NewsQuery) {
   if (!date || Number.isNaN(Date.parse(date))) return false;
@@ -197,6 +187,28 @@ function matchesQuery(items: NewsItem[], q: NewsQuery) {
   );
 }
 
+function bodyItems(input: unknown, q: NewsQuery) {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 60).flatMap((row) => {
+    if (typeof row?.summary !== "string" || row.summary.length > 400) return [];
+    const keywords = newsKeywords(row.summary, q.topicId, q.query);
+    if (!keywords.length) return [];
+    const item = makeItem(row, "新聞內文比對", q);
+    return item?.linkKind === "publisher"
+      ? [
+          {
+            ...item,
+            bodyKeywords: keywords,
+            rssLinks:
+              typeof row.rssLink === "string" && googleArticleKey(row.rssLink)
+                ? [row.rssLink]
+                : [],
+          },
+        ]
+      : [];
+  });
+}
+
 const publisherNames: Record<string, string> = {
   anue: "鉅亨網",
   ltn: "自由時報",
@@ -291,14 +303,55 @@ async function google(q: NewsQuery, env: NewsEnv, stamp: (at: string) => void) {
   if (!res.ok) throw new Error("RSS_HTTP_" + res.status);
   return parseNewsRSS(await readLimited(res, 1_500_000), q);
 }
+function googleArticleKey(link: string) {
+  try {
+    const url = new URL(link);
+    if (
+      url.origin === "https://news.google.com" &&
+      /^\/rss\/articles\/[\w-]+$/.test(url.pathname)
+    )
+      return url.origin + url.pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 export function mergeNews(items: NewsItem[]) {
+  const originals = new Map<string, NewsItem>();
+  for (const item of items) {
+    for (const link of item.rssLinks || []) {
+      const key = googleArticleKey(link);
+      if (key) originals.set(key, item);
+    }
+  }
   const map = new Map<string, NewsItem>();
-  for (const a of items) {
+  for (const item of items) {
+    const original =
+      item.linkKind === "aggregator"
+        ? originals.get(googleArticleKey(item.url) || "")
+        : undefined;
+    const a = original ? { ...original, sources: item.sources } : item;
     const old = map.get(a.url);
     map.set(
       a.url,
       old
-        ? { ...old, sources: [...new Set([...old.sources, ...a.sources])] }
+        ? {
+            ...old,
+            author: old.author || a.author,
+            ...(a.bodyKeywords?.length
+              ? {
+                  summary: old.bodyKeywords?.length ? old.summary : a.summary,
+                  bodyKeywords: old.bodyKeywords || a.bodyKeywords,
+                  rssLinks: [
+                    ...new Set([
+                      ...(old.rssLinks || []),
+                      ...(a.rssLinks || []),
+                    ]),
+                  ],
+                }
+              : {}),
+            sources: [...new Set([...old.sources, ...a.sources])],
+          }
         : a,
     );
   }
@@ -394,7 +447,7 @@ export async function collectNews(
         ? "partial"
         : "failed",
     sources,
-    note: "自動搜尋結果，待確認是否為本次發稿露出；歷史搜尋與 RSS 不保證收錄完整。Google 聚合連結保留原樣，不憑相同標題合併。",
+    note: "自動收集比對標題、摘要及可讀取的原站內文。標有「內文命中」的報導已在原文找到關鍵字。各站收錄範圍會影響結果。",
   };
   await env.NEWS_CACHE!.put(
     "news:v1:" + q.key,
@@ -441,12 +494,17 @@ export async function ingestRSS(
   topicId: string,
   xml: string,
   media?: unknown,
+  bodyMatches?: unknown,
 ) {
   const q = newsQuery(
     new URL("https://news.invalid/?topic=" + encodeURIComponent(topicId)),
   );
   if (!q.topicId) throw new Error("僅允許更新預設新聞主題");
-  const items = xml ? parseNewsRSS(xml, q) : null;
+  const verified = bodyItems(bodyMatches, q);
+  const items =
+    xml || verified.length
+      ? mergeNews([...verified, ...(xml ? parseNewsRSS(xml, q) : [])])
+      : null;
   const fetchedAt = new Date().toISOString();
   const mediaItems = new Map<string, NewsItem[]>();
   if (q.topicId === "newebpay" && Array.isArray(media)) {

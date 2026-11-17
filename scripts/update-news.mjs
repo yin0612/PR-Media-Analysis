@@ -1,4 +1,5 @@
 import { supplementalNewsSources } from "../src/news-sources.ts";
+import { collectBodyMatches, inBatches } from "./news-body.mjs";
 
 const base =
   process.env.NEWS_API_URL ||
@@ -12,16 +13,35 @@ const localDay = (offset = 0) =>
 const topics = [
   {
     id: "newebpay",
+    keyword: "藍新金流",
     query: '("藍新金流" OR "藍新科技" OR NewebPay)',
     from: localDay(-29),
     to: localDay(),
   },
   {
     id: "aftee-202604",
+    keyword: "藍新 AFTEE",
     query: "藍新 AFTEE",
     from: "2026-04-29",
     to: "2026-05-14",
   },
+];
+const bodySearchSites = [
+  "ctwant.com",
+  "money.udn.com",
+  "udn.com",
+  "news.pchome.com.tw",
+  "n.yam.com",
+  "today.line.me",
+  "tw.news.yahoo.com",
+  "tw.stock.yahoo.com",
+  "chinatimes.com",
+  "ctee.com.tw",
+  "money-link.com.tw",
+  "wantrich.chinatimes.com",
+  "investor.com.tw",
+  "stock.ltn.com.tw",
+  "cardu.com.tw",
 ];
 function googleUrl(topic, query) {
   const after = new Date(Date.parse(topic.from) - 86400000)
@@ -91,24 +111,55 @@ async function collectMedia(topic) {
   return feeds;
 }
 
+async function collectBodyFeeds(topic) {
+  if (topic.id !== "newebpay") return [];
+  const feeds = await inBatches(bodySearchSites, 4, async (site) => {
+    try {
+      const url = googleUrl(topic, `site:${site} "藍新"`);
+      return { site, xml: await fetchRSS(url, 180000, 6000) };
+    } catch (e) {
+      console.warn(`Article search failed for ${site}: ${e.message}`);
+      return null;
+    }
+  });
+  return feeds.filter(Boolean);
+}
+
 let failed = 0;
 for (const topic of topics) {
   try {
-    const [xml, media] = await Promise.all([
+    const [xml, media, additional] = await Promise.all([
       fetchRSS(googleUrl(topic, topic.query), 1_400_000).catch((e) => {
         console.warn(`Google News RSS failed for ${topic.id}: ${e.message}`);
         return "";
       }),
       topic.id === "newebpay" ? collectMedia(topic) : [],
+      collectBodyFeeds(topic),
     ]);
-    if (!xml && !media.length) throw new Error("No RSS feeds available");
+    const body = await collectBodyMatches(topic, [
+      { xml },
+      ...media.map((feed) => {
+        const source = supplementalNewsSources.find(
+          (source) => source.id === feed.id,
+        );
+        return { ...feed, site: source.site, name: source.name };
+      }),
+      ...additional,
+    ]);
+    if (!xml && !media.length && !body.matches.length)
+      throw new Error("No RSS feeds available");
     const r = await fetch(base + "/api/news/ingest", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ topic: topic.id, xml, media }),
+      body: JSON.stringify({
+        topic: topic.id,
+        xml,
+        media,
+        bodyMatches: body.matches,
+      }),
       signal: AbortSignal.timeout(90000),
     });
     const data = await r.json();
@@ -121,6 +172,9 @@ for (const topic of topics) {
         status: data.status,
         updatedAt: data.updatedAt,
         supplementalFeeds: media.length,
+        articlesChecked: body.checked,
+        readableArticles: body.readable,
+        bodyMatches: body.matches.length,
       }),
     );
   } catch (e) {

@@ -8,6 +8,8 @@ export interface NewsItem {
   summary: string;
   linkKind: "publisher" | "aggregator";
   sources: string[];
+  bodyKeywords?: string[];
+  rssLinks?: string[];
 }
 export interface NewsTopic {
   id: string;

@@ -108,7 +108,12 @@ export default function AutoNews({
           a.publisher,
           a.author || "未提供",
           { text: a.title, hyperlink: a.url },
-          a.sources.join("、"),
+          [
+            ...a.sources,
+            ...(a.bodyKeywords?.length
+              ? [`內文命中 ${a.bodyKeywords.join("、")}`]
+              : []),
+          ].join(" · "),
         ]);
         row.getCell(2).numFmt = "yyyy/mm/dd";
         row.getCell(5).font = { color: { argb: "FF235B9B" }, underline: true };
@@ -325,6 +330,9 @@ export default function AutoNews({
                           {a.sources.join("、")}
                           {a.linkKind === "aggregator"
                             ? " · Google 聚合連結"
+                            : ""}
+                          {a.bodyKeywords?.length
+                            ? ` · 內文命中 ${a.bodyKeywords.join("、")}`
                             : ""}
                         </small>
                       </td>

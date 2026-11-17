@@ -331,6 +331,7 @@ export default {
             String(payload.topic || ""),
             String(payload.xml || ""),
             payload.media,
+            payload.bodyMatches,
           ),
           200,
           cors,

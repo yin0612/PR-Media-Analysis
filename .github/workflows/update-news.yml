@@ -11,12 +11,17 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: node scripts/update-news.mjs
         env:
           NEWS_INGEST_KEY: ${{ secrets.NEWS_INGEST_KEY }}
