@@ -1,6 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { load } from "cheerio";
-import { XMLParser } from "fast-xml-parser";
+import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import robotsParser from "robots-parser";
 import { agentCommerce, newsKeywords } from "../src/news-keywords.ts";
 import { publicIP, readLimited } from "../worker/security.ts";
@@ -9,12 +9,18 @@ const bot = "PRMediaNewsCollector";
 const google = "https://news.google.com";
 const taiwan = { hl: "zh-TW", gl: "TW", ceid: "TW:zh-Hant" };
 const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false });
+const rssBuilder = new XMLBuilder({ ignoreAttributes: false });
 const clean = (text) =>
   String(text ?? "")
     .replace(/\s+/g, " ")
     .trim();
 const groups = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 const hostname = (url) => url.hostname.replace(/^www\./, "");
+const articleLayouts = {
+  "idn.com.tw": { body: "td.newsa", headline: "td.headnewsd" },
+  "ww2.money-link.com.tw": { body: ".NewsMainContent.Content", headline: "h3" },
+  "fountmedia.io": { body: "div.div1.content" },
+};
 
 export async function inBatches(items, size, run) {
   const results = [];
@@ -155,7 +161,10 @@ async function readArticle(url, hosts, policies) {
     }
     if (!r.ok || !/text\/html/i.test(r.headers.get("content-type") || ""))
       return null;
-    const article = parseArticle(await readLimited(r, 2_000_000));
+    const article = parseArticle(
+      await readLimited(r, 2_000_000),
+      articleLayouts[hostname(url)],
+    );
     if (article.canonical) {
       try {
         const canonical = publicURL(new URL(article.canonical, url));
@@ -169,7 +178,7 @@ async function readArticle(url, hosts, policies) {
   return null;
 }
 
-export function parseArticle(html) {
+export function parseArticle(html, layout = {}) {
   const $ = load(html);
   const records = $('script[type="application/ld+json"]')
     .toArray()
@@ -198,8 +207,12 @@ export function parseArticle(html) {
     $(
       "script, style, nav, header, footer, aside, form, figure, .related-news",
     ).remove();
-    const container = $(
-      '[itemprop="articleBody"], #newsContent, .article-body, .article-content',
+    const container = (
+      layout.body
+        ? $(layout.body)
+        : $(
+            '[itemprop="articleBody"], #newsContent, .article-body, .article-content',
+          )
     ).first();
     body = clean(
       container.length
@@ -213,11 +226,55 @@ export function parseArticle(html) {
   return {
     body,
     author,
+    headline: clean(
+      metadata?.headline ||
+        $('meta[property="og:title"]').attr("content") ||
+        $(layout.headline || "h1")
+          .first()
+          .text(),
+    ),
     date:
       metadata?.datePublished ||
       $('meta[property="article:published_time"]').attr("content"),
     canonical: $('link[rel="canonical"]').attr("href"),
   };
+}
+
+export function addScopedTitleMatches(xml, feeds, topic) {
+  if (!topic.sites?.length) return xml;
+  function entries(xmlText) {
+    if (/<!DOCTYPE|<!ENTITY/i.test(xmlText)) return [];
+    try {
+      return groups(parser.parse(xmlText)?.rss?.channel?.item);
+    } catch {
+      return [];
+    }
+  }
+  const scoped = feeds.flatMap((feed) =>
+    entries(feed.xml).filter(
+      (row) =>
+        newsKeywords(
+          clean(row.title),
+          topic.id,
+          topic.query,
+          topic.issue,
+          topic.issueAliases,
+        ).length,
+    ),
+  );
+  const items = new Map(
+    [...scoped, ...entries(xml)].map((row) => [row.link, row]),
+  );
+  return items.size
+    ? rssBuilder.build({
+        rss: {
+          channel: {
+            title: "Google News",
+            item: [...items.values()].slice(0, 150),
+          },
+        },
+      })
+    : xml;
 }
 
 function candidates(feed, topic) {
@@ -260,7 +317,8 @@ function candidates(feed, topic) {
       const topicHeading =
         /ai.{0,8}(導購|購物)|代理式|萬事達卡|mastercard|buytalk agent/i.test(
           headline,
-        );
+        ) ||
+        (topic.sites?.length && /第三方支付|台史交流/.test(headline));
       const score = newsKeywords(
         headline,
         topic.id,
@@ -313,7 +371,7 @@ export function keywordExcerpt(body, topic) {
     .slice(0, 400);
 }
 
-export async function collectBodyMatches(topic, feeds) {
+export async function collectBodyMatches(topic, feeds, seeds = []) {
   const valid = feeds.flatMap((feed) => {
     try {
       return candidates(feed, topic);
@@ -321,8 +379,17 @@ export async function collectBodyMatches(topic, feeds) {
       return [];
     }
   });
+  const direct = seeds.map(({ url, publisher, date }) => ({
+    link: url,
+    publisher,
+    date,
+    score: 5,
+    hosts: new Set([hostname(publicURL(url))]),
+  }));
   const unique = [
-    ...new Map(valid.map((candidate) => [candidate.link, candidate])).values(),
+    ...new Map(
+      [...valid, ...direct].map((candidate) => [candidate.link, candidate]),
+    ).values(),
   ]
     .sort((a, b) => b.score - a.score)
     .slice(0, 60);
@@ -337,9 +404,10 @@ export async function collectBodyMatches(topic, feeds) {
       if (!result?.article.body) return;
       readable++;
       const summary = keywordExcerpt(result.article.body, topic);
-      if (summary)
+      const title = candidate.title || result.article.headline;
+      if (summary && title)
         found.push({
-          title: candidate.title,
+          title,
           url: result.url.href,
           rssLink: candidate.link,
           publisher: candidate.publisher,

@@ -19,6 +19,7 @@ export interface NewsTopic {
   to?: string;
   issue?: string;
   issueAliases?: string[];
+  sites?: string[];
 }
 export interface NewsFeed {
   query: string;
@@ -57,6 +58,40 @@ export const defaultNewsTopics: NewsTopic[] = [
     issue: "台灣大",
     from: "2026-10-27",
     to: "2026-11-03",
+  },
+  {
+    id: "eswatini-202610",
+    name: "史瓦帝尼｜參訪藍新科技",
+    query: "藍新 史瓦帝尼",
+    issue: "史瓦帝尼",
+    issueAliases: ["台史雙邊數位商務發展計畫"],
+    from: "2026-10-13",
+    to: "2026-10-14",
+    sites: [
+      "cna.com.tw",
+      "udn.com",
+      "money.udn.com",
+      "fountmedia.io",
+      "news.pchome.com.tw",
+      "tw.news.yahoo.com",
+      "idn.com.tw",
+      "chinatimes.com",
+      "ctee.com.tw",
+      "wantrich.chinatimes.com",
+      "ec.ltn.com.tw",
+      "3kingtw.com",
+      "moneydj.com",
+      "www.ttv.com.tw/finance",
+      "knews.com.tw",
+      "leho.com.tw",
+      "n.yam.com",
+      "today.line.me",
+      "investor.com.tw",
+      "tw.stock.yahoo.com",
+      "money-link.com.tw",
+      "news.wearn.com",
+      "cmoney.tw/forum",
+    ],
   },
   {
     id: "aftee-202604",

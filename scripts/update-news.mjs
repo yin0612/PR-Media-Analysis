@@ -1,7 +1,11 @@
 import { supplementalNewsSources } from "../src/news-sources.ts";
 import { defaultNewsTopics } from "../src/news-types.ts";
 import { newsGoogleTerms } from "../src/news-keywords.ts";
-import { collectBodyMatches, inBatches } from "./news-body.mjs";
+import {
+  addScopedTitleMatches,
+  collectBodyMatches,
+  inBatches,
+} from "./news-body.mjs";
 
 const base =
   process.env.NEWS_API_URL ||
@@ -35,6 +39,49 @@ const bodySearchSites = [
   "stock.ltn.com.tw",
   "cardu.com.tw",
 ];
+const eswatiniArticleLinks = [
+  [
+    "富聯網",
+    "https://ww2.money-link.com.tw/realtimenews/NewsContent.aspx?PU=1002&SN=6329725001",
+  ],
+  ["蕃新聞", "https://n.yam.com/Article/20261013653562"],
+  [
+    "Yahoo 股市",
+    "https://tw.stock.yahoo.com/news/%E6%99%BA%E5%86%A0%E6%97%97%E4%B8%8B%E8%97%8D%E6%96%B0%E7%A7%91%E6%8A%80%E5%88%86%E4%BA%AB%E5%8F%B0%E7%81%A3%E6%94%AF%E4%BB%98%E7%B6%93%E9%A9%97-%E5%8A%A9%E5%8F%8B%E9%82%A6%E5%8F%B2%E7%93%A6%E5%B8%9D%E5%B0%BC%E6%8B%93%E5%B1%95%E6%95%B8%E4%BD%8D%E5%95%86%E5%8B%99-053856149.html",
+  ],
+  ["中央社", "https://www.cna.com.tw/news/afe/202610130166.aspx"],
+  ["聯合新聞網", "https://udn.com/news/story/7240/9811857"],
+  ["經濟日報", "https://money.udn.com/money/story/5612/9811857"],
+  ["放言", "https://www.fountmedia.io/article/433875"],
+  [
+    "PChome Online 新聞",
+    "https://news.pchome.com.tw/finance/cna/20261013/index-17918742396331018003.html",
+  ],
+  [
+    "Yahoo 新聞",
+    "https://tw.news.yahoo.com/share/22427aeb-9d88-3921-baca-93b9813e3012",
+  ],
+  [
+    "自立晚報",
+    "https://www.idn.com.tw/news/news_content.aspx?catid=3&catsid=1&catdid=0&artid=20261013kofang011",
+  ],
+  [
+    "PChome Online 新聞",
+    "https://news.pchome.com.tw/living/leho/20261014/index-79192060181002356009.html",
+    "2026-10-14",
+  ],
+  [
+    "PChome Online 新聞",
+    "https://news.pchome.com.tw/finance/idn/20261014/index-79192380880741224003.html",
+    "2026-10-14",
+  ],
+  [
+    "Yahoo 新聞",
+    "https://tw.news.yahoo.com/share/ee130125-24c9-3dd6-96f2-94f990da0ed7",
+    "2026-10-14",
+  ],
+];
+
 function googleUrl(topic, query) {
   const after = new Date(Date.parse(topic.from) - 86400000)
     .toISOString()
@@ -105,7 +152,8 @@ async function collectMedia(topic) {
 
 async function collectBodyFeeds(topic) {
   const sites =
-    topic.id === "newebpay"
+    topic.sites ||
+    (topic.id === "newebpay"
       ? bodySearchSites
       : topic.issue
         ? [
@@ -115,10 +163,12 @@ async function collectBodyFeeds(topic) {
             "news.pchome.com.tw",
             "today.line.me",
           ]
-        : [];
-  const terms = topic.issue
-    ? newsGoogleTerms(topic.query, topic.id, topic.issue, topic.issueAliases)
-    : '"藍新"';
+        : []);
+  const terms = topic.sites
+    ? `"${topic.issue}"`
+    : topic.issue
+      ? newsGoogleTerms(topic.query, topic.id, topic.issue, topic.issueAliases)
+      : '"藍新"';
   const feeds = await inBatches(sites, 4, async (site) => {
     try {
       const url = googleUrl(topic, `site:${site} ${terms}`);
@@ -141,7 +191,7 @@ for (const topic of topics) {
       topic.issue,
       topic.issueAliases,
     );
-    const [xml, media, additional] = await Promise.all([
+    const [mainXml, media, additional] = await Promise.all([
       fetchRSS(googleUrl(topic, terms), 1_400_000).catch((e) => {
         console.warn(`Google News RSS failed for ${topic.id}: ${e.message}`);
         return "";
@@ -149,16 +199,29 @@ for (const topic of topics) {
       topic.id === "newebpay" ? collectMedia(topic) : [],
       collectBodyFeeds(topic),
     ]);
-    const body = await collectBodyMatches(topic, [
-      { xml },
-      ...media.map((feed) => {
-        const source = supplementalNewsSources.find(
-          (source) => source.id === feed.id,
-        );
-        return { ...feed, site: source.site, name: source.name };
-      }),
-      ...additional,
-    ]);
+    const xml = addScopedTitleMatches(mainXml, additional, topic);
+    const publicLinks =
+      topic.id === "eswatini-202610"
+        ? eswatiniArticleLinks.map(([publisher, url, date = topic.from]) => ({
+            publisher,
+            url,
+            date,
+          }))
+        : [];
+    const body = await collectBodyMatches(
+      topic,
+      [
+        { xml: mainXml },
+        ...media.map((feed) => {
+          const source = supplementalNewsSources.find(
+            (source) => source.id === feed.id,
+          );
+          return { ...feed, site: source.site, name: source.name };
+        }),
+        ...additional,
+      ],
+      publicLinks,
+    );
     if (!xml && !media.length && !body.matches.length)
       throw new Error("No RSS feeds available");
     const r = await fetch(base + "/api/news/ingest", {

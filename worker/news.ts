@@ -83,7 +83,7 @@ export function newsQuery(url: URL, at = Date.now()): NewsQuery {
   return {
     key:
       topic?.id ||
-      JSON.stringify([query, from, to, ...(issue ? ["issue"] : [])]),
+      JSON.stringify([query, from, to, ...(issue ? ["issue-v2"] : [])]),
     query,
     topicId: topic?.id || "",
     from,
