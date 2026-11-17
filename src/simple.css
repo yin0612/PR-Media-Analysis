@@ -23,7 +23,7 @@
 }
 .auto-search details {
   font-size: 11px;
-  color: #8a9aaf;
+  color: var(--muted);
   margin-top: 12px;
 }
 .auto-search summary {
@@ -50,7 +50,7 @@
 }
 .auto-freshness {
   font-size: 10px;
-  color: #849aae;
+  color: var(--muted);
   white-space: nowrap;
 }
 .auto-freshness .status-dot {
@@ -59,29 +59,29 @@
 .auto-row-source {
   display: block;
   font-size: 9px;
-  color: #9aabba;
+  color: var(--muted);
   margin-top: 5px;
 }
 .auto-source-status {
   padding: 17px 24px;
   font-size: 10px;
-  color: #8598ad;
+  color: var(--muted);
   background: #f9fbfd;
   line-height: 1.9;
 }
 .auto-source-status p {
   margin-top: 7px;
-  color: #9aa9b9;
+  color: var(--muted);
 }
 .auto-source-status strong {
-  color: #b08a58;
+  color: var(--warning);
   margin-left: 12px;
   font-weight: 500;
 }
 .auto-warning {
   background: #fff7e9;
   border-color: #f0e0bd;
-  color: #a37f4b;
+  color: var(--warning);
 }
 .auto-source-status + .simple-footer {
   margin-top: 0;
@@ -112,7 +112,7 @@
 }
 .simple-top > .text-button {
   font-size: 12px;
-  color: #8594a6;
+  color: var(--muted);
 }
 .simple-main {
   max-width: 1228px;
@@ -133,7 +133,7 @@
 }
 .simple-heading p {
   font-size: 13px;
-  color: #7e8fa2;
+  color: var(--muted);
   margin-top: 8px;
 }
 .simple-heading > .secondary {
@@ -154,7 +154,7 @@
 .simple-list-select > span {
   display: block;
   font-size: 12px;
-  color: #8092a7;
+  color: var(--muted);
   margin-bottom: 8px;
 }
 .simple-list-select select {
@@ -187,7 +187,7 @@
 }
 .simple-sheet-heading p {
   font-size: 12px;
-  color: #8090a3;
+  color: var(--muted);
   margin-top: 7px;
 }
 .simple-sheet-heading p strong {
@@ -197,7 +197,7 @@
 }
 .simple-sheet-heading p span {
   font-size: 10px;
-  color: #a0acb8;
+  color: var(--muted);
   margin-left: 5px;
 }
 .simple-sheet-heading .search input {
@@ -212,7 +212,7 @@
 .simple-table th {
   font-size: 12px;
   padding: 15px 18px;
-  color: #6d829a;
+  color: var(--muted);
   background: #edf3f9;
 }
 .simple-table td {
@@ -237,18 +237,18 @@
   width: 80px;
 }
 .simple-table td:first-child {
-  color: #95a3b3;
+  color: var(--muted);
   text-align: center;
 }
 .simple-table td:nth-child(2) {
   font-size: 11px;
-  color: #8292a5;
+  color: var(--muted);
 }
 .simple-table td:nth-child(3) {
   font-weight: 500;
 }
 .simple-table td a {
-  color: #2e6597;
+  color: var(--blue);
   display: inline;
   line-height: 1.9;
 }
@@ -258,7 +258,7 @@
 .simple-table td a svg {
   margin-left: 6px;
   vertical-align: middle;
-  color: #99afc4;
+  color: var(--muted);
 }
 .simple-table tbody tr:hover {
   background: #fafcfe;
@@ -269,7 +269,7 @@
 }
 .simple-row-actions button {
   background: transparent;
-  color: #a0aebd;
+  color: var(--muted);
   padding: 4px;
   border-radius: 4px;
 }
@@ -279,7 +279,7 @@
 }
 .simple-table-footer {
   font-size: 11px;
-  color: #97a5b6;
+  color: var(--muted);
   padding: 17px 24px;
   background: #fcfdff;
 }
@@ -290,13 +290,13 @@
   text-align: center;
   padding: 55px 20px 65px;
   border-top: 1px solid #edf1f6;
-  color: #8a9fb6;
+  color: var(--muted);
 }
 .simple-empty > svg {
   margin-bottom: 23px;
 }
 .simple-empty h3 {
-  color: #4e6b8a;
+  color: var(--muted);
   font-size: 19px;
   font-weight: 500;
 }
@@ -304,17 +304,17 @@
   font-size: 12px;
   line-height: 2;
   margin: 14px 0 23px;
-  color: #8d9db0;
+  color: var(--muted);
 }
 .simple-empty small {
   font-size: 10px;
-  color: #a1aebd;
+  color: var(--muted);
   margin-top: 15px;
 }
 .simple-notice {
   background: #edf5f4;
   border: 1px solid #d9e8e4;
-  color: #5d817c;
+  color: var(--teal);
   padding: 13px 16px;
   display: flex;
   align-items: center;
@@ -331,11 +331,11 @@
   gap: 20px;
   padding: 24px 0 35px;
   font-size: 10px;
-  color: #98a6b6;
+  color: var(--muted);
 }
 .simple-footer .text-button {
   font-size: 10px;
-  color: #8197ae;
+  color: var(--muted);
 }
 .simple-footer .button-row {
   gap: 20px;
@@ -346,7 +346,7 @@
 .simple-hint,
 .simple-import-summary {
   font-size: 12px;
-  color: #8a9cb0;
+  color: var(--muted);
   line-height: 1.9;
 }
 .simple-import-summary {
@@ -355,7 +355,7 @@
 .simple-no-results {
   text-align: center;
   padding: 35px;
-  color: #99a7b7;
+  color: var(--muted);
   font-size: 13px;
 }
 .sr-only {
