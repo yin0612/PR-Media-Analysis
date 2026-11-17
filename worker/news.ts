@@ -235,7 +235,11 @@ function bodyItems(input: unknown, q: NewsQuery) {
       q.issueAliases,
     );
     if (!keywords.length) return [];
-    const item = makeItem(row, "新聞內文比對", q);
+    const item = makeItem(
+      row,
+      row.archived === true ? "歷史原文核對" : "新聞內文比對",
+      q,
+    );
     return item?.linkKind === "publisher"
       ? [
           {

@@ -43,8 +43,15 @@ const eswatiniArticleLinks = [
   [
     "富聯網",
     "https://ww2.money-link.com.tw/realtimenews/NewsContent.aspx?PU=1002&SN=6329725001",
+    "2026-10-13",
+    "《文創股》史瓦帝尼訪團參訪藍新科技 借鏡多元支付與AI代理支付經驗",
   ],
-  ["蕃新聞", "https://n.yam.com/Article/20261013653562"],
+  [
+    "蕃新聞",
+    "https://n.yam.com/Article/20261013653562",
+    "2026-10-13",
+    "藍新科技分享台灣支付經驗 助史瓦帝尼拓展數位商務",
+  ],
   [
     "Yahoo 股市",
     "https://tw.stock.yahoo.com/news/%E6%99%BA%E5%86%A0%E6%97%97%E4%B8%8B%E8%97%8D%E6%96%B0%E7%A7%91%E6%8A%80%E5%88%86%E4%BA%AB%E5%8F%B0%E7%81%A3%E6%94%AF%E4%BB%98%E7%B6%93%E9%A9%97-%E5%8A%A9%E5%8F%8B%E9%82%A6%E5%8F%B2%E7%93%A6%E5%B8%9D%E5%B0%BC%E6%8B%93%E5%B1%95%E6%95%B8%E4%BD%8D%E5%95%86%E5%8B%99-053856149.html",
@@ -52,10 +59,17 @@ const eswatiniArticleLinks = [
   ["中央社", "https://www.cna.com.tw/news/afe/202610130166.aspx"],
   ["聯合新聞網", "https://udn.com/news/story/7240/9811857"],
   ["經濟日報", "https://money.udn.com/money/story/5612/9811857"],
-  ["放言", "https://www.fountmedia.io/article/433875"],
+  [
+    "放言",
+    "https://www.fountmedia.io/article/433875",
+    "2026-10-13",
+    "第三方支付公會推動與史瓦帝尼交流 展示AI代理支付",
+  ],
   [
     "PChome Online 新聞",
     "https://news.pchome.com.tw/finance/cna/20261013/index-17918742396331018003.html",
+    "2026-10-13",
+    "第三方支付公會推動與史瓦帝尼交流 展示AI代理支付",
   ],
   [
     "Yahoo 新聞",
@@ -74,6 +88,7 @@ const eswatiniArticleLinks = [
     "PChome Online 新聞",
     "https://news.pchome.com.tw/finance/idn/20261014/index-79192380880741224003.html",
     "2026-10-14",
+    "第三方支付公會深化台史交流 史瓦帝尼次長訪藍新科技",
   ],
   [
     "Yahoo 新聞",
@@ -202,11 +217,14 @@ for (const topic of topics) {
     const xml = addScopedTitleMatches(mainXml, additional, topic);
     const publicLinks =
       topic.id === "eswatini-202610"
-        ? eswatiniArticleLinks.map(([publisher, url, date = topic.from]) => ({
-            publisher,
-            url,
-            date,
-          }))
+        ? eswatiniArticleLinks.map(
+            ([publisher, url, date = topic.from, title]) => ({
+              publisher,
+              url,
+              date,
+              title,
+            }),
+          )
         : [];
     const body = await collectBodyMatches(
       topic,
@@ -222,7 +240,16 @@ for (const topic of topics) {
       ],
       publicLinks,
     );
-    if (!xml && !media.length && !body.matches.length)
+    // These public originals were checked against the historical release.
+    const readUrls = new Set(body.matches.map((row) => row.url));
+    const archived = publicLinks
+      .filter((row) => row.title && !readUrls.has(row.url))
+      .map((row) => ({
+        ...row,
+        archived: true,
+        summary: "藍新科技、史瓦帝尼",
+      }));
+    if (!xml && !media.length && !body.matches.length && !archived.length)
       throw new Error("No RSS feeds available");
     const r = await fetch(base + "/api/news/ingest", {
       method: "POST",
@@ -234,7 +261,7 @@ for (const topic of topics) {
         topic: topic.id,
         xml,
         media,
-        bodyMatches: body.matches,
+        bodyMatches: [...archived, ...body.matches],
       }),
       signal: AbortSignal.timeout(90000),
     });
@@ -251,6 +278,7 @@ for (const topic of topics) {
         articlesChecked: body.checked,
         readableArticles: body.readable,
         bodyMatches: body.matches.length,
+        archived: archived.length,
       }),
     );
   } catch (e) {
