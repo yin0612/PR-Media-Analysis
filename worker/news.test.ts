@@ -6,10 +6,14 @@ import {
   mergeNews,
   collectNews,
   loadNews,
+  ingestRSS,
 } from "./news";
 import type { NewsEnv } from "./news";
 import type { NewsFeed } from "../src/news-types";
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 const historical = () =>
   newsQuery(new URL("https://example.com/?topic=aftee-202604"));
 const xml =
@@ -66,6 +70,57 @@ it("來源失敗保留雲端最後成功資料，不能顯示成成功", async (
   expect(next.items).toHaveLength(1);
   expect(next.lastSuccessAt).toBe(first.lastSuccessAt);
   expect((await loadNews(env, historical())).items).toHaveLength(1);
+});
+it("補充媒體的官方與 Google RSS 進入藍新清單，部分失敗保留上次結果", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-17T08:00:00Z"));
+  const { env } = memory();
+  env.MONITORING = {
+    fetch: async () => Response.json({ data: { items: [] } }),
+  };
+  const googleFeed = xml
+    .replace("藍新金流攜手AFTEE服務", "藍新攜手萬事達卡推AI導購平台")
+    .replace("Wed, 29 Apr", "Fri, 13 Nov");
+  const officialFeed = xml
+    .replace(" - 示意媒體", "")
+    .replace(
+      "https://news.google.com/rss/articles/test",
+      "https://3kingtw.com/4566/",
+    )
+    .replace("Wed, 29 Apr", "Fri, 13 Nov");
+  const result = await ingestRSS(
+    env,
+    "newebpay",
+    "<rss><channel><title>Google</title></channel></rss>",
+    [
+      { id: "biggo", xml: googleFeed, official: false },
+      { id: "3kingtw", xml: officialFeed, official: true },
+      { id: "2000fun", xml: "<html></html>", official: true },
+    ],
+  );
+  expect(result).toMatchObject({ count: 2, status: "partial" });
+  await ingestRSS(env, "newebpay", "", [
+    { id: "biggo", xml: googleFeed, official: false },
+  ]);
+  const feed = await loadNews(
+    env,
+    newsQuery(new URL("https://example.com/?topic=newebpay")),
+  );
+  expect(feed.items).toHaveLength(2);
+  expect(feed.items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        publisher: "BigGo 財經",
+        linkKind: "aggregator",
+        sources: ["Google News RSS"],
+      }),
+      expect.objectContaining({
+        publisher: "鑫台灣財經網",
+        linkKind: "publisher",
+        sources: ["官方 RSS"],
+      }),
+    ]),
+  );
 });
 it("拒絕無效日期、未知主題及過大的搜尋輸入", () => {
   for (const query of [

@@ -1,12 +1,14 @@
 import { XMLParser } from "fast-xml-parser";
 import { canonicalize, taipeiDate } from "../src/domain";
+import { supplementalNewsSources } from "../src/news-sources";
+import type { MediaSource } from "../src/news-sources";
 import { defaultNewsTopics } from "../src/news-types";
 import type { NewsFeed, NewsItem } from "../src/news-types";
 import { readLimited } from "./security";
 export interface NewsEnv {
   MONITORING?: { fetch(input: Request | string | URL): Promise<Response> };
   NEWS_CACHE?: {
-    get(key: string, type: "json"): Promise<NewsFeed | null>;
+    get(key: string, type: "json"): Promise<unknown>;
     put(
       key: string,
       value: string,
@@ -71,7 +73,9 @@ export function relevant(title: string, summary: string, q: NewsQuery) {
   const text = (title + " " + summary).toLowerCase();
   if (q.topicId === "newebpay")
     return (
-      ["藍新金流", "藍新科技", "newebpay"].some((t) => text.includes(t)) &&
+      (["藍新金流", "藍新科技", "newebpay"].some((t) => text.includes(t)) ||
+        (text.includes("藍新") &&
+          /ai\s*(導購|購物)|buytalk agent|代理式(商務|支付)/i.test(text))) &&
       !text.includes("藍新資訊")
     );
   return q.query
@@ -129,7 +133,11 @@ function makeItem(
     sources: [source],
   };
 }
-export function parseNewsRSS(xml: string, q: NewsQuery): NewsItem[] {
+export function parseNewsRSS(
+  xml: string,
+  q: NewsQuery,
+  media?: { source: MediaSource; official: boolean },
+): NewsItem[] {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("不支援的新聞格式");
   const parsed = new XMLParser({
     ignoreAttributes: false,
@@ -144,16 +152,51 @@ export function parseNewsRSS(xml: string, q: NewsQuery): NewsItem[] {
     const source = r.source as { "#text"?: string } | string | undefined;
     const publisher = typeof source === "object" ? source["#text"] : source;
     let title = clean(r.title);
-    if (publisher && title.endsWith(" - " + publisher))
+    if (!media?.official && publisher && title.endsWith(" - " + publisher))
       title = title.slice(0, -publisher.length - 3);
     const a = makeItem(
-      { title, url: r.link, publisher, date: r.pubDate, summary: "" },
-      "Google News RSS",
+      {
+        title,
+        url: r.link,
+        publisher: media?.source.name || publisher,
+        date: r.pubDate,
+        summary: media?.official ? r.description : "",
+        author: media?.official ? r["dc:creator"] || r.author : "",
+      },
+      media?.official ? "官方 RSS" : "Google News RSS",
       q,
     );
     return a ? [a] : [];
   });
 }
+
+interface CachedRSS {
+  items: NewsItem[];
+  fetchedAt: string;
+}
+
+interface CachedMedia extends CachedRSS {
+  count: number;
+}
+
+const supplementalCacheKey = "rss:media:v1:newebpay";
+const supplementalSourceName = "補充媒體 RSS";
+
+function isFreshRSS(cached: CachedRSS | null) {
+  return (
+    cached &&
+    Array.isArray(cached.items) &&
+    Date.now() - Date.parse(cached.fetchedAt) < 6 * 3600000
+  );
+}
+
+function matchesQuery(items: NewsItem[], q: NewsQuery) {
+  return items.filter(
+    (item) =>
+      allowedDate(item.publishedAt, q) && relevant(item.title, item.summary, q),
+  );
+}
+
 const publisherNames: Record<string, string> = {
   anue: "鉅亨網",
   ltn: "自由時報",
@@ -218,16 +261,10 @@ async function google(q: NewsQuery, env: NewsEnv, stamp: (at: string) => void) {
     const cached = (await env.NEWS_CACHE.get(
       "rss:v1:" + cacheTopic,
       "json",
-    )) as unknown as { items: NewsItem[]; fetchedAt: string } | null;
-    if (
-      cached &&
-      Array.isArray(cached.items) &&
-      Date.now() - Date.parse(cached.fetchedAt) < 6 * 3600000
-    ) {
+    )) as CachedRSS | null;
+    if (cached && isFreshRSS(cached)) {
       stamp(cached.fetchedAt);
-      return cached.items.filter(
-        (a) => allowedDate(a.publishedAt, q) && relevant(a.title, a.summary, q),
-      );
+      return matchesQuery(cached.items, q);
     }
   }
   const u = new URL("https://news.google.com/rss/search");
@@ -271,7 +308,10 @@ export function mergeNews(items: NewsItem[]) {
 }
 async function saved(env: NewsEnv, key: string) {
   if (!env.NEWS_CACHE) throw new Error("新聞保存服務尚未設定");
-  return env.NEWS_CACHE.get("news:v1:" + key, "json");
+  return (await env.NEWS_CACHE.get(
+    "news:v1:" + key,
+    "json",
+  )) as NewsFeed | null;
 }
 export async function collectNews(
   env: NewsEnv,
@@ -282,6 +322,7 @@ export async function collectNews(
     new Date(Date.now() - 30 * 86400000).toISOString(),
   );
   const sourceTimes = new Map<string, string>();
+  let supplementalPartial = false;
   const tasks: { name: string; run: () => Promise<NewsItem[]> }[] = [
     {
       name: "Google News RSS",
@@ -290,6 +331,25 @@ export async function collectNews(
   ];
   if (q.to >= current)
     tasks.unshift({ name: "MediaMonitoring", run: () => monitoring(q, env) });
+  if (
+    q.to >= current &&
+    (q.topicId === "newebpay" || (!q.topicId && /藍新|newebpay/i.test(q.query)))
+  ) {
+    tasks.push({
+      name: supplementalSourceName,
+      run: async () => {
+        const cached = (await env.NEWS_CACHE!.get(
+          supplementalCacheKey,
+          "json",
+        )) as CachedMedia | null;
+        if (!cached || !isFreshRSS(cached))
+          throw new Error("補充媒體 RSS 尚未更新");
+        sourceTimes.set(supplementalSourceName, cached.fetchedAt);
+        supplementalPartial = cached.count < supplementalNewsSources.length;
+        return matchesQuery(cached.items, q);
+      },
+    });
+  }
   const attempts = await Promise.allSettled(tasks.map((t) => t.run()));
   attempts.forEach((r, i) => {
     if (r.status === "rejected")
@@ -306,7 +366,11 @@ export async function collectNews(
     name: tasks[i].name,
     ok: r.status === "fulfilled",
     updatedAt: sourceTimes.get(tasks[i].name) || new Date().toISOString(),
-    ...(r.status === "rejected" ? { error: "來源暫時無法更新" } : {}),
+    ...(r.status === "rejected"
+      ? { error: "來源暫時無法更新" }
+      : tasks[i].name === supplementalSourceName && supplementalPartial
+        ? { error: "部分補充媒體暫時無法更新" }
+        : {}),
   }));
   const success = sources.filter((s) => s.ok).length;
   const at = new Date().toISOString();
@@ -315,12 +379,7 @@ export async function collectNews(
     topicId: q.topicId,
     from: q.from,
     to: q.to,
-    items: mergeNews([
-      ...fresh,
-      ...(old?.items || []).filter(
-        (a) => allowedDate(a.publishedAt, q) && relevant(a.title, a.summary, q),
-      ),
-    ]),
+    items: mergeNews([...fresh, ...matchesQuery(old?.items || [], q)]),
     lastAttemptAt: at,
     lastSuccessAt: success
       ? sources
@@ -329,8 +388,11 @@ export async function collectNews(
           .sort()
           .at(-1) || at
       : old?.lastSuccessAt || null,
-    status:
-      success === sources.length ? "ready" : success ? "partial" : "failed",
+    status: sources.every((s) => s.ok && !s.error)
+      ? "ready"
+      : success
+        ? "partial"
+        : "failed",
     sources,
     note: "自動搜尋結果，待確認是否為本次發稿露出；歷史搜尋與 RSS 不保證收錄完整。Google 聚合連結保留原樣，不憑相同標題合併。",
   };
@@ -374,17 +436,58 @@ export async function collectTopics(env: NewsEnv) {
   return results;
 }
 
-export async function ingestRSS(env: NewsEnv, topicId: string, xml: string) {
+export async function ingestRSS(
+  env: NewsEnv,
+  topicId: string,
+  xml: string,
+  media?: unknown,
+) {
   const q = newsQuery(
     new URL("https://news.invalid/?topic=" + encodeURIComponent(topicId)),
   );
   if (!q.topicId) throw new Error("僅允許更新預設新聞主題");
-  const items = parseNewsRSS(xml, q);
+  const items = xml ? parseNewsRSS(xml, q) : null;
   const fetchedAt = new Date().toISOString();
-  await env.NEWS_CACHE!.put(
-    "rss:v1:" + q.topicId,
-    JSON.stringify({ items, fetchedAt }),
-  );
+  const mediaItems = new Map<string, NewsItem[]>();
+  if (q.topicId === "newebpay" && Array.isArray(media)) {
+    for (const entry of media.slice(0, supplementalNewsSources.length)) {
+      const source = supplementalNewsSources.find((m) => m.id === entry?.id);
+      if (!source || mediaItems.has(source.id) || typeof entry.xml !== "string")
+        continue;
+      try {
+        const official = entry.official === true && !!source.rss;
+        mediaItems.set(
+          source.id,
+          parseNewsRSS(entry.xml, q, { source, official }),
+        );
+      } catch {
+        console.warn("supplemental_rss_invalid", source.id);
+      }
+    }
+  }
+  if (!items && !mediaItems.size) throw new Error("來源未提供有效 RSS");
+  if (items)
+    await env.NEWS_CACHE!.put(
+      "rss:v1:" + q.topicId,
+      JSON.stringify({ items, fetchedAt }),
+    );
+  if (mediaItems.size) {
+    const previous = (await env.NEWS_CACHE!.get(
+      supplementalCacheKey,
+      "json",
+    )) as CachedMedia | null;
+    await env.NEWS_CACHE!.put(
+      supplementalCacheKey,
+      JSON.stringify({
+        items: mergeNews([
+          ...[...mediaItems.values()].flat(),
+          ...matchesQuery(previous?.items || [], q),
+        ]),
+        count: mediaItems.size,
+        fetchedAt,
+      } satisfies CachedMedia),
+    );
+  }
   const feed = await collectNews(env, q);
   return {
     topic: topicId,

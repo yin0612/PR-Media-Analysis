@@ -12,6 +12,11 @@
 
 來源為既有 MediaMonitoring 的真實搜尋介面及 Google News RSS。自動結果是候選新聞，不直接等同已確認的發稿成果。RSS 不保證涵蓋完整歷史；沒有記者欄位的來源顯示「來源未提供」。藍新品牌預設排除易混淆的藍新資訊。Google 聚合連結另有標示，不以同標題強行合併原站與聚合頁。
 
+藍新品牌另追蹤 13 個媒體或頻道。每小時由同一排程收集，結果會出現在「藍新金流最新新聞」及近 30 天的藍新關鍵字搜尋。各來源的設定在 [news-sources.ts](src/news-sources.ts)。
+
+- 官方 RSS 優先，讀取失敗或近期訂閱內容沒有藍新關鍵字時改查 Google News：[2000Fun](https://www.2000fun.com/feed)、[鑫台灣財經網](https://3kingtw.com/feed/)、[DIGITIMES 科技網 AI・智慧應用・電商物流](https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_60.xml)。
+- Google News RSS 依各站網域查找雷電模擬器、OHMYGOD 歐買尬、三立財經子站、台視財經網、東森財經網、聚財網、聚財X、CMoney、智流 Smart Flow 與 BigGo 財經。智流 Smart Flow 的 RSS 搜尋在本次查核未回傳文章。
+
 自動新聞基本資料存於 Cloudflare Workers KV，跨瀏覽器可讀。網頁每 5 分鐘讀取；快取超過 30 分鐘時補抓，GitHub Actions 每小時第 37 分鐘收集預設主題（排程可能延後）。部分來源失敗仍保留最後成功資料。原 Excel 與人工資料仍保存在原瀏覽器，不自動上傳。
 
 Cloudflare 執行環境直接取得 Google RSS 曾回應 503，因此 GitHub 收集器取得 RSS 後，以專用 `NEWS_INGEST_KEY` 傳入 `/api/news/ingest`，由後端驗證內容、日期與主題再寫入 KV。此憑證只設定於 GitHub Actions Secrets 與 Worker Secrets，不能用來呼叫 AI；前端不持有。MediaMonitoring 使用同帳號服務綁定讀取，沒有修改原站。

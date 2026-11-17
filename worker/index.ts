@@ -321,7 +321,7 @@ export default {
           throw new HTTPError("更新過於頻繁", 429);
         let payload;
         try {
-          payload = JSON.parse(await readLimited(req, 1_500_000));
+          payload = JSON.parse(await readLimited(req, 4_000_000));
         } catch {
           throw new HTTPError("RSS 資料格式錯誤");
         }
@@ -330,6 +330,7 @@ export default {
             env,
             String(payload.topic || ""),
             String(payload.xml || ""),
+            payload.media,
           ),
           200,
           cors,

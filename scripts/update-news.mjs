@@ -1,3 +1,5 @@
+import { supplementalNewsSources } from "../src/news-sources.ts";
+
 const base =
   process.env.NEWS_API_URL ||
   "https://pr-media-analysis-api.media-monitoring-worker.workers.dev";
@@ -21,40 +23,92 @@ const topics = [
     to: "2026-05-14",
   },
 ];
+function googleUrl(topic, query) {
+  const after = new Date(Date.parse(topic.from) - 86400000)
+    .toISOString()
+    .slice(0, 10);
+  const before = new Date(Date.parse(topic.to) + 86400000)
+    .toISOString()
+    .slice(0, 10);
+  const url = new URL("https://news.google.com/rss/search");
+  url.search = new URLSearchParams({
+    q: `${query} after:${after} before:${before}`,
+    hl: "zh-TW",
+    gl: "TW",
+    ceid: "TW:zh-Hant",
+  }).toString();
+  return url;
+}
+
+async function fetchRSS(url, maxBytes, timeout = 30000) {
+  const rss = await fetch(url, {
+    headers: {
+      Accept: "application/rss+xml,application/xml,text/xml,*/*",
+      "User-Agent": "PRMediaNewsCollector/1.0",
+    },
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!rss.ok) throw new Error(`RSS HTTP ${rss.status}`);
+  const xml = await rss.text();
+  if (Buffer.byteLength(xml) > maxBytes || !xml.includes("<rss"))
+    throw new Error("Invalid RSS response");
+  return xml;
+}
+
+async function collectMedia(topic) {
+  const feeds = [];
+  // Keep Google News requests spread across small groups.
+  for (let i = 0; i < supplementalNewsSources.length; i += 3) {
+    const batch = supplementalNewsSources.slice(i, i + 3);
+    await Promise.all(
+      batch.map(async ({ id, site, rss }) => {
+        let officialXml = "";
+        try {
+          if (rss) {
+            try {
+              officialXml = await fetchRSS(rss, 160000, 12000);
+              if (/藍新(?!資訊)|newebpay/i.test(officialXml)) {
+                feeds.push({ id, xml: officialXml, official: true });
+                return;
+              }
+            } catch (e) {
+              console.warn(`Official RSS failed for ${id}: ${e.message}`);
+            }
+          }
+          const url = googleUrl(topic, `site:${site} "藍新"`);
+          feeds.push({
+            id,
+            xml: await fetchRSS(url, 160000, 12000),
+            official: false,
+          });
+        } catch (e) {
+          if (officialXml) feeds.push({ id, xml: officialXml, official: true });
+          console.warn(`Supplemental RSS failed for ${id}: ${e.message}`);
+        }
+      }),
+    );
+  }
+  return feeds;
+}
+
 let failed = 0;
 for (const topic of topics) {
   try {
-    const after = new Date(Date.parse(topic.from) - 86400000)
-      .toISOString()
-      .slice(0, 10);
-    const before = new Date(Date.parse(topic.to) + 86400000)
-      .toISOString()
-      .slice(0, 10);
-    const url = new URL("https://news.google.com/rss/search");
-    url.search = new URLSearchParams({
-      q: `${topic.query} after:${after} before:${before}`,
-      hl: "zh-TW",
-      gl: "TW",
-      ceid: "TW:zh-Hant",
-    }).toString();
-    const rss = await fetch(url, {
-      headers: {
-        Accept: "application/rss+xml,application/xml",
-        "User-Agent": "PRMediaNewsCollector/1.0",
-      },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!rss.ok) throw new Error(`RSS HTTP ${rss.status}`);
-    const xml = await rss.text();
-    if (xml.length > 1400000 || !xml.includes("<rss"))
-      throw new Error("Invalid RSS response");
+    const [xml, media] = await Promise.all([
+      fetchRSS(googleUrl(topic, topic.query), 1_400_000).catch((e) => {
+        console.warn(`Google News RSS failed for ${topic.id}: ${e.message}`);
+        return "";
+      }),
+      topic.id === "newebpay" ? collectMedia(topic) : [],
+    ]);
+    if (!xml && !media.length) throw new Error("No RSS feeds available");
     const r = await fetch(base + "/api/news/ingest", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ topic: topic.id, xml }),
+      body: JSON.stringify({ topic: topic.id, xml, media }),
       signal: AbortSignal.timeout(90000),
     });
     const data = await r.json();
@@ -66,6 +120,7 @@ for (const topic of topics) {
         count: data.count,
         status: data.status,
         updatedAt: data.updatedAt,
+        supplementalFeeds: media.length,
       }),
     );
   } catch (e) {
