@@ -11,7 +11,7 @@ it("關鍵字可在原文後段，頁首與站內推薦不算內文", () => {
   `);
   const excerpt = keywordExcerpt(article.body, {
     id: "newebpay",
-    keyword: "藍新金流",
+    query: "藍新金流",
   });
   expect(excerpt).toContain("藍新科技");
   expect(excerpt).not.toMatch(/藍新金流|NewebPay/);

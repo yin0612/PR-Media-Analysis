@@ -36,6 +36,24 @@ it("自動主題不混入同名的藍新資訊，舊事件有獨立期間", () =
   expect(relevant("藍新金流服務", "", q)).toBe(true);
   expect(historical()).toMatchObject({ from: "2026-04-29", to: "2026-05-14" });
 });
+it("藍新專題同時比對品牌和議題，預設追蹤期間截止到今天", () => {
+  vi.setSystemTime(new Date("2026-11-17T08:00:00Z"));
+  const custom = new URL("https://example.com/");
+  custom.searchParams.set("issue", "藍新 台灣大");
+  const q = newsQuery(custom);
+  expect(q).toMatchObject({ query: "藍新 台灣大", issue: "台灣大" });
+  expect(relevant("先買後付新服務", "NewebPay 攜手台灣大哥大", q)).toBe(true);
+  expect(relevant("台灣大哥大推出新服務", "其他業者", q)).toBe(false);
+  expect(relevant("藍新資訊攜手台灣大", "", q)).toBe(false);
+  expect(relevant("藍新科技打造AI購物助手", "", q)).toBe(false);
+  const preset = newsQuery(
+    new URL("https://example.com/?topic=buytalk-202611"),
+  );
+  expect(preset).toMatchObject({ from: "2026-11-12", to: "2026-11-17" });
+  expect(
+    relevant("人工智慧幫人買東西", "藍新科技推出 AI 導購平台", preset),
+  ).toBe(true);
+});
 it("RSS 保留媒體、真實日期、聚合連結且不捏造記者", () => {
   const a = parseNewsRSS(xml, historical());
   expect(a).toHaveLength(1);

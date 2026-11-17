@@ -26,60 +26,66 @@
 .auto-news .simple-notice {
   font-size: 14px;
 }
-.auto-news .simple-list-select select,
-.auto-news .auto-dates input {
+.auto-news .simple-list-select select {
   font-size: 16px;
 }
 .auto-news .simple-controls .primary,
 .auto-news .simple-controls .secondary,
-.auto-news .auto-search-row .secondary {
+.auto-news .auto-search-actions button {
   font-size: 14px;
 }
 .auto-search {
   margin: 0 0 25px;
-}
-.auto-search-row {
-  display: flex;
-  gap: 12px;
-}
-.auto-search-row > .search {
-  flex: 1;
-  min-width: 0;
-  max-width: 650px;
+  padding: clamp(14px, 2.5vw, 22px);
+  border: 1px solid #dfe7f0;
+  border-radius: 12px;
   background: #fff;
 }
-.auto-search-row > .search:focus-within {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
+.auto-search-fields {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.6fr) minmax(180px, 2fr) repeat(
+      2,
+      minmax(135px, 1fr)
+    );
+  gap: 12px;
 }
-.auto-search-row .search input {
-  width: 100%;
-  min-width: 0;
-  font-size: 16px;
-  padding: 12px 0;
-}
-.auto-search details {
-  font-size: 14px;
-  color: var(--muted);
-  margin-top: 12px;
-}
-.auto-search summary {
-  cursor: pointer;
-}
-.auto-dates {
-  display: flex;
-  align-items: end;
-  gap: 15px;
-  margin-top: 15px;
-  flex-wrap: wrap;
-}
-.auto-dates label {
+.auto-search-fields label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  min-width: 0;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 14px;
 }
-.auto-dates span {
-  padding-bottom: 12px;
+.auto-search-fields input,
+.auto-search-fields select {
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  padding: 9px 10px;
+  font-size: 16px;
+}
+.auto-search-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.auto-search-actions [role="status"] {
+  color: var(--muted);
+  font-size: 14px;
+}
+@media (max-width: 700px) {
+  .auto-search-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 470px) {
+  .auto-search-fields label:first-child,
+  .auto-issue {
+    grid-column: 1 / -1;
+  }
 }
 .auto-freshness {
   font-size: 14px;

@@ -6,12 +6,49 @@ import {
   Search,
   ExternalLink,
   ArrowRight,
+  Bookmark,
 } from "lucide-react";
 import { defaultNewsTopics } from "./news-types";
 import type { NewsFeed } from "./news-types";
+import { cleanNewsIssue } from "./news-keywords";
 import { request } from "./api";
 import { download } from "./export";
 import { formatDate, taipeiDate } from "./domain";
+
+type NewsSearch =
+  | { topic: string }
+  | { issue: string; from: string; to: string }
+  | { q: string; from: string; to: string };
+
+interface SavedNewsSearch {
+  id: string;
+  issue: string;
+  from: string;
+  to: string;
+}
+
+const savedSearchKey = "pr-media-news-searches:v1";
+const recentDay = (days = 0) =>
+  taipeiDate(new Date(Date.now() + days * 86400000).toISOString());
+
+function readSavedSearches(): SavedNewsSearch[] {
+  try {
+    const content: unknown = JSON.parse(
+      localStorage.getItem(savedSearchKey) || "[]",
+    );
+    if (!Array.isArray(content)) return [];
+    return content.filter(
+      (entry) =>
+        typeof entry?.id === "string" &&
+        typeof entry.issue === "string" &&
+        typeof entry.from === "string" &&
+        typeof entry.to === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
 export default function AutoNews({
   apiUrl,
   onLocal,
@@ -21,39 +58,27 @@ export default function AutoNews({
 }) {
   const [feed, setFeed] = useState<NewsFeed | null>(null);
   const [topic, setTopic] = useState("newebpay");
-  const [query, setQuery] = useState("藍新金流");
-  const [from, setFrom] = useState(
-    taipeiDate(new Date(Date.now() - 29 * 86400000).toISOString()),
-  );
-  const [to, setTo] = useState(taipeiDate(new Date().toISOString()));
+  const [query, setQuery] = useState("");
+  const [brandOnly, setBrandOnly] = useState(true);
+  const [from, setFrom] = useState(() => recentDay(-29));
+  const [to, setTo] = useState(() => recentDay());
+  const [saved, setSaved] = useState(readSavedSearches);
+  const [saveNotice, setSaveNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
   const ticket = useRef(0);
-  const active = useRef({
-    topic: "newebpay",
-    query: "藍新金流",
-    from: "",
-    to: "",
-  });
+  const active = useRef<NewsSearch>({ topic: "newebpay" });
   async function load(input = active.current) {
     const id = ++ticket.current;
     active.current = input;
     setLoading(true);
     setError("");
     try {
-      const params = input.topic
-        ? new URLSearchParams({ topic: input.topic })
-        : new URLSearchParams({
-            q: input.query,
-            from: input.from,
-            to: input.to,
-          });
+      const params = new URLSearchParams(input);
       const value = await request<NewsFeed>(apiUrl, "", "/api/news?" + params);
       if (id !== ticket.current) return;
       setFeed(value);
-      setFrom(value.from);
-      setTo(value.to);
     } catch (e) {
       if (id === ticket.current) setError((e as Error).message);
     } finally {
@@ -70,6 +95,92 @@ export default function AutoNews({
       ticket.current++;
     };
   }, [apiUrl]);
+  function selectTopic(id: string) {
+    const preset = defaultNewsTopics.find((entry) => entry.id === id);
+    const savedTopic = saved.find((entry) => entry.id === id);
+    setSaveNotice("");
+    if (preset) {
+      setTopic(id);
+      setQuery(preset.issue || "");
+      setBrandOnly(true);
+      setFrom(preset.from || recentDay(-29));
+      setTo(preset.to && preset.to < recentDay() ? preset.to : recentDay());
+      void load({ topic: id });
+    } else if (savedTopic) {
+      setTopic(id);
+      setQuery(savedTopic.issue);
+      setBrandOnly(true);
+      setFrom(savedTopic.from);
+      setTo(savedTopic.to);
+      void load({
+        issue: savedTopic.issue,
+        from: savedTopic.from,
+        to: savedTopic.to,
+      });
+    }
+  }
+
+  function runSearch(save: boolean) {
+    const issue = brandOnly ? cleanNewsIssue(query) : query.trim();
+    setSaveNotice("");
+    if (issue.length < 2 || (brandOnly && /[<>"]/.test(issue))) {
+      setError(
+        brandOnly
+          ? "請填寫至少兩個字的公開議題關鍵字。"
+          : "請填寫至少兩個字的關鍵字。",
+      );
+      return;
+    }
+    if (
+      !from ||
+      !to ||
+      from > to ||
+      to > recentDay() ||
+      Date.parse(to) - Date.parse(from) > 365 * 86400000
+    ) {
+      setError("請選擇不超過一年的有效新聞期間。");
+      return;
+    }
+    let id = "";
+    if (brandOnly) {
+      const current = readSavedSearches();
+      id =
+        current.find(
+          (entry) =>
+            entry.issue.toLowerCase() === issue.toLowerCase() &&
+            entry.from === from &&
+            entry.to === to,
+        )?.id || "";
+      if (save) {
+        const next = id
+          ? current
+          : [...current, { id: crypto.randomUUID(), issue, from, to }];
+        id ||= next.at(-1)!.id;
+        try {
+          localStorage.setItem(savedSearchKey, JSON.stringify(next));
+          setSaved(next);
+          setSaveNotice("已儲存在此瀏覽器，可從上方選單再開啟。");
+        } catch {
+          setSaveNotice("此瀏覽器目前無法儲存專題。");
+          id = "";
+        }
+      } else setSaved(current);
+    }
+    setTopic(id);
+    void load(brandOnly ? { issue, from, to } : { q: issue, from, to });
+  }
+
+  function removeSavedTopic() {
+    const next = readSavedSearches().filter((entry) => entry.id !== topic);
+    try {
+      localStorage.setItem(savedSearchKey, JSON.stringify(next));
+      setSaved(next);
+      setTopic("");
+      setSaveNotice("已從此瀏覽器移除專題。");
+    } catch {
+      setSaveNotice("此瀏覽器目前無法移除專題。");
+    }
+  }
   async function exportExcel() {
     if (!feed) return;
     setExporting(true);
@@ -148,35 +259,34 @@ export default function AutoNews({
         <div className="simple-heading">
           <div>
             <h1>自動新聞露出清單</h1>
-            <p>開啟就能看新聞。選主題、點標題、下載表格，不必建立專案。</p>
+            <p>選擇追蹤主題，或輸入議題和日期查找藍新露出。</p>
           </div>
         </div>
         <div className="simple-controls">
           <label className="simple-list-select">
-            <span>看哪個主題</span>
+            <span>追蹤主題</span>
             <select
               aria-label="自動新聞主題"
               value={topic}
-              onChange={(e) => {
-                const t = defaultNewsTopics.find(
-                  (t) => t.id === e.target.value,
-                )!;
-                setTopic(t.id);
-                setQuery(t.query);
-                void load({
-                  topic: t.id,
-                  query: t.query,
-                  from: t.from || "",
-                  to: t.to || "",
-                });
-              }}
+              onChange={(e) => selectTopic(e.target.value)}
             >
-              {defaultNewsTopics.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-              {!topic && <option value="">自訂搜尋</option>}
+              {!topic && <option value="">本次搜尋</option>}
+              <optgroup label="自動更新">
+                {defaultNewsTopics.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </optgroup>
+              {saved.length > 0 && (
+                <optgroup label="此瀏覽器的專題">
+                  {saved.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.issue}（{entry.from} 至 {entry.to}）
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <div className="button-row">
@@ -190,7 +300,7 @@ export default function AutoNews({
             </button>
             <button
               className="primary"
-              disabled={!feed?.items.length || exporting}
+              disabled={!feed?.items.length || exporting || loading}
               onClick={exportExcel}
             >
               <Download size={16} />
@@ -202,54 +312,84 @@ export default function AutoNews({
           className="auto-search"
           onSubmit={(e) => {
             e.preventDefault();
-            setTopic("");
-            void load({ topic: "", query, from, to });
+            runSearch(false);
           }}
         >
-          <div className="auto-search-row">
-            <label className="search">
-              <Search size={17} />
+          <div className="auto-search-fields">
+            <label>
+              搜尋範圍
+              <select
+                value={brandOnly ? "newebpay" : "all"}
+                onChange={(e) => setBrandOnly(e.target.value === "newebpay")}
+              >
+                <option value="newebpay">藍新</option>
+                <option value="all">不限品牌</option>
+              </select>
+            </label>
+            <label className="auto-issue">
+              {brandOnly ? "議題關鍵字" : "新聞關鍵字"}
               <input
-                aria-label="新聞關鍵字"
                 required
                 minLength={2}
-                maxLength={100}
+                maxLength={brandOnly ? 80 : 100}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="輸入品牌或新聞關鍵字"
+                placeholder={
+                  brandOnly
+                    ? "例如 應援、AI導購、台灣大"
+                    : "輸入品牌或新聞關鍵字"
+                }
               />
             </label>
-            <button className="secondary" disabled={loading}>
-              搜尋新聞
-            </button>
+            <label>
+              開始日期
+              <input
+                type="date"
+                required
+                value={from}
+                max={to || recentDay()}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+            </label>
+            <label>
+              結束日期
+              <input
+                type="date"
+                required
+                value={to}
+                min={from}
+                max={recentDay()}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </label>
           </div>
-          <details>
-            <summary>
-              調整搜尋日期（目前 {from} 至 {to}）
-            </summary>
-            <div className="auto-dates">
-              <label>
-                開始日期
-                <input
-                  type="date"
-                  required
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                />
-              </label>
-              <label>
-                結束日期
-                <input
-                  type="date"
-                  required
-                  value={to}
-                  max={taipeiDate(new Date().toISOString())}
-                  onChange={(e) => setTo(e.target.value)}
-                />
-              </label>
-              <span>調整後按「搜尋新聞」套用。</span>
-            </div>
-          </details>
+          <div className="auto-search-actions">
+            <button className="primary" disabled={loading}>
+              <Search size={16} /> 搜尋新聞
+            </button>
+            {brandOnly && (
+              <button
+                className="secondary"
+                type="button"
+                disabled={loading}
+                onClick={(e) => {
+                  if (e.currentTarget.form?.reportValidity()) runSearch(true);
+                }}
+              >
+                <Bookmark size={16} /> 儲存專題
+              </button>
+            )}
+            {saved.some((entry) => entry.id === topic) && (
+              <button
+                className="text-button"
+                type="button"
+                onClick={removeSavedTopic}
+              >
+                移除專題
+              </button>
+            )}
+            {saveNotice && <span role="status">{saveNotice}</span>}
+          </div>
         </form>
         {error && (
           <div className="simple-notice auto-warning" role="alert">

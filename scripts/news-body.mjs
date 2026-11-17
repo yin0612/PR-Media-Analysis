@@ -261,7 +261,13 @@ function candidates(feed, topic) {
         /ai.{0,8}(導購|購物)|代理式|萬事達卡|mastercard|buytalk agent/i.test(
           headline,
         );
-      const score = newsKeywords(headline, topic.id, topic.keyword).length
+      const score = newsKeywords(
+        headline,
+        topic.id,
+        topic.query,
+        topic.issue,
+        topic.issueAliases,
+      ).length
         ? topicHeading
           ? 3
           : 1
@@ -285,7 +291,13 @@ function candidates(feed, topic) {
 
 export function keywordExcerpt(body, topic) {
   const normalized = body.normalize("NFKC");
-  const words = newsKeywords(normalized, topic.id, topic.keyword);
+  const words = newsKeywords(
+    normalized,
+    topic.id,
+    topic.query,
+    topic.issue,
+    topic.issueAliases,
+  );
   if (!words.length) return "";
   const positions = words.map((word) =>
     normalized.toLowerCase().indexOf(word.toLowerCase()),

@@ -1,4 +1,6 @@
 import { supplementalNewsSources } from "../src/news-sources.ts";
+import { defaultNewsTopics } from "../src/news-types.ts";
+import { newsGoogleTerms } from "../src/news-keywords.ts";
 import { collectBodyMatches, inBatches } from "./news-body.mjs";
 
 const base =
@@ -10,22 +12,12 @@ const localDay = (offset = 0) =>
   new Date(Date.now() + 8 * 3600000 + offset * 86400000)
     .toISOString()
     .slice(0, 10);
-const topics = [
-  {
-    id: "newebpay",
-    keyword: "藍新金流",
-    query: '("藍新金流" OR "藍新科技" OR NewebPay)',
-    from: localDay(-29),
-    to: localDay(),
-  },
-  {
-    id: "aftee-202604",
-    keyword: "藍新 AFTEE",
-    query: "藍新 AFTEE",
-    from: "2026-04-29",
-    to: "2026-05-14",
-  },
-];
+const today = localDay();
+const topics = defaultNewsTopics.map((topic) => ({
+  ...topic,
+  from: topic.from || localDay(-29),
+  to: topic.to && topic.to < today ? topic.to : today,
+}));
 const bodySearchSites = [
   "ctwant.com",
   "money.udn.com",
@@ -112,10 +104,24 @@ async function collectMedia(topic) {
 }
 
 async function collectBodyFeeds(topic) {
-  if (topic.id !== "newebpay") return [];
-  const feeds = await inBatches(bodySearchSites, 4, async (site) => {
+  const sites =
+    topic.id === "newebpay"
+      ? bodySearchSites
+      : topic.issue
+        ? [
+            "ctwant.com",
+            "inews.setn.com",
+            "money.udn.com",
+            "news.pchome.com.tw",
+            "today.line.me",
+          ]
+        : [];
+  const terms = topic.issue
+    ? newsGoogleTerms(topic.query, topic.id, topic.issue, topic.issueAliases)
+    : '"藍新"';
+  const feeds = await inBatches(sites, 4, async (site) => {
     try {
-      const url = googleUrl(topic, `site:${site} "藍新"`);
+      const url = googleUrl(topic, `site:${site} ${terms}`);
       return { site, xml: await fetchRSS(url, 180000, 6000) };
     } catch (e) {
       console.warn(`Article search failed for ${site}: ${e.message}`);
@@ -127,9 +133,16 @@ async function collectBodyFeeds(topic) {
 
 let failed = 0;
 for (const topic of topics) {
+  if (topic.from > topic.to) continue;
   try {
+    const terms = newsGoogleTerms(
+      topic.query,
+      topic.id,
+      topic.issue,
+      topic.issueAliases,
+    );
     const [xml, media, additional] = await Promise.all([
-      fetchRSS(googleUrl(topic, topic.query), 1_400_000).catch((e) => {
+      fetchRSS(googleUrl(topic, terms), 1_400_000).catch((e) => {
         console.warn(`Google News RSS failed for ${topic.id}: ${e.message}`);
         return "";
       }),

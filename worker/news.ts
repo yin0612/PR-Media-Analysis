@@ -1,6 +1,10 @@
 import { XMLParser } from "fast-xml-parser";
 import { canonicalize, taipeiDate } from "../src/domain";
-import { newsKeywords } from "../src/news-keywords";
+import {
+  cleanNewsIssue,
+  newsGoogleTerms,
+  newsKeywords,
+} from "../src/news-keywords";
 import { supplementalNewsSources } from "../src/news-sources";
 import type { MediaSource } from "../src/news-sources";
 import { defaultNewsTopics } from "../src/news-types";
@@ -26,12 +30,28 @@ export interface NewsQuery {
   topicId: string;
   from: string;
   to: string;
+  issue?: string;
+  issueAliases?: string[];
 }
 export function newsQuery(url: URL, at = Date.now()): NewsQuery {
   const topicId = url.searchParams.get("topic") || "";
   const topic = defaultNewsTopics.find((t) => t.id === topicId);
   if (topicId && !topic) throw new Error("找不到追蹤主題");
-  const query = (topic?.query || url.searchParams.get("q") || "藍新金流")
+  const issue =
+    topic?.issue ||
+    (!topicId && url.searchParams.has("issue")
+      ? cleanNewsIssue(url.searchParams.get("issue") || "")
+      : undefined);
+  if (
+    issue !== undefined &&
+    (issue.length < 2 || issue.length > 80 || /[<>"\x00-\x1f]/.test(issue))
+  )
+    throw new Error("請輸入 2 至 80 個字的公開議題關鍵字");
+  const query = (
+    topic?.query ||
+    (issue ? `藍新 ${issue}` : url.searchParams.get("q")) ||
+    "藍新金流"
+  )
     .trim()
     .replace(/\s+/g, " ");
   if (query.length < 2 || query.length > 100 || /[<>\x00-\x1f]/.test(query))
@@ -41,7 +61,11 @@ export function newsQuery(url: URL, at = Date.now()): NewsQuery {
     topic?.from ||
     url.searchParams.get("from") ||
     taipeiDate(new Date(at - 29 * 86400000).toISOString());
-  const to = topic?.to || url.searchParams.get("to") || today;
+  const to = topic?.to
+    ? topic.to > today
+      ? today
+      : topic.to
+    : url.searchParams.get("to") || today;
   for (const day of [from, to]) {
     if (
       !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
@@ -57,11 +81,15 @@ export function newsQuery(url: URL, at = Date.now()): NewsQuery {
   )
     throw new Error("請選擇不超過一年的有效新聞期間");
   return {
-    key: topic?.id || JSON.stringify([query, from, to]),
+    key:
+      topic?.id ||
+      JSON.stringify([query, from, to, ...(issue ? ["issue"] : [])]),
     query,
     topicId: topic?.id || "",
     from,
     to,
+    issue,
+    issueAliases: topic?.issueAliases,
   };
 }
 function clean(v: unknown) {
@@ -71,7 +99,15 @@ function clean(v: unknown) {
     .trim();
 }
 export function relevant(title: string, summary: string, q: NewsQuery) {
-  return newsKeywords(title + " " + summary, q.topicId, q.query).length > 0;
+  return (
+    newsKeywords(
+      title + " " + summary,
+      q.topicId,
+      q.query,
+      q.issue,
+      q.issueAliases,
+    ).length > 0
+  );
 }
 function allowedDate(date: string, q: NewsQuery) {
   if (!date || Number.isNaN(Date.parse(date))) return false;
@@ -191,7 +227,13 @@ function bodyItems(input: unknown, q: NewsQuery) {
   if (!Array.isArray(input)) return [];
   return input.slice(0, 60).flatMap((row) => {
     if (typeof row?.summary !== "string" || row.summary.length > 400) return [];
-    const keywords = newsKeywords(row.summary, q.topicId, q.query);
+    const keywords = newsKeywords(
+      row.summary,
+      q.topicId,
+      q.query,
+      q.issue,
+      q.issueAliases,
+    );
     if (!keywords.length) return [];
     const item = makeItem(row, "新聞內文比對", q);
     return item?.linkKind === "publisher"
@@ -221,7 +263,7 @@ const publisherNames: Record<string, string> = {
 };
 async function monitoring(q: NewsQuery, env: NewsEnv): Promise<NewsItem[]> {
   const queries =
-    q.topicId === "newebpay" ? ["藍新金流", "藍新科技"] : [q.query];
+    q.topicId === "newebpay" ? ["藍新金流", "藍新科技"] : [q.issue || q.query];
   const runs = await Promise.all(
     queries.map(async (query) => {
       const url = new URL(
@@ -262,21 +304,52 @@ async function monitoring(q: NewsQuery, env: NewsEnv): Promise<NewsItem[]> {
 async function google(q: NewsQuery, env: NewsEnv, stamp: (at: string) => void) {
   const cacheTopic =
     q.topicId ||
-    (q.query.toLowerCase().includes("aftee") && q.query.includes("藍新")
-      ? "aftee-202604"
-      : ["藍新金流", "藍新科技", "newebpay"].some((t) =>
-            q.query.toLowerCase().includes(t),
-          )
-        ? "newebpay"
-        : "");
+    (q.issue
+      ? "newebpay"
+      : q.query.toLowerCase().includes("aftee") && q.query.includes("藍新")
+        ? "aftee-202604"
+        : ["藍新金流", "藍新科技", "newebpay"].some((t) =>
+              q.query.toLowerCase().includes(t),
+            )
+          ? "newebpay"
+          : "");
+  const previous: CachedRSS[] = [];
   if (cacheTopic && env.NEWS_CACHE) {
     const cached = (await env.NEWS_CACHE.get(
       "rss:v1:" + cacheTopic,
       "json",
     )) as CachedRSS | null;
     if (cached && isFreshRSS(cached)) {
-      stamp(cached.fetchedAt);
-      return matchesQuery(cached.items, q);
+      if (!q.issue || q.topicId) {
+        stamp(cached.fetchedAt);
+        return matchesQuery(cached.items, q);
+      }
+      previous.push(cached);
+    }
+  }
+  if (q.issue && !q.topicId && env.NEWS_CACHE) {
+    const namedTopics = defaultNewsTopics.filter(
+      (topic) =>
+        topic.id !== "newebpay" &&
+        (!topic.from || topic.from <= q.to) &&
+        (!topic.to || topic.to >= q.from),
+    );
+    const caches = await Promise.allSettled(
+      namedTopics.map(
+        async (topic) =>
+          (await env.NEWS_CACHE!.get(
+            "rss:v1:" + topic.id,
+            "json",
+          )) as CachedRSS | null,
+      ),
+    );
+    for (const cache of caches) {
+      if (
+        cache.status === "fulfilled" &&
+        cache.value &&
+        isFreshRSS(cache.value)
+      )
+        previous.push(cache.value);
     }
   }
   const u = new URL("https://news.google.com/rss/search");
@@ -286,22 +359,34 @@ async function google(q: NewsQuery, env: NewsEnv, stamp: (at: string) => void) {
   const after = new Date(Date.parse(q.from) - 86400000)
     .toISOString()
     .slice(0, 10);
-  const terms =
-    q.topicId === "newebpay"
-      ? '("藍新金流" OR "藍新科技" OR NewebPay)'
-      : q.query;
+  const terms = newsGoogleTerms(q.query, q.topicId, q.issue, q.issueAliases);
   u.search = new URLSearchParams({
     q: `${terms} after:${after} before:${before}`,
     hl: "zh-TW",
     gl: "TW",
     ceid: "TW:zh-Hant",
   }).toString();
-  const res = await fetch(u, {
-    signal: AbortSignal.timeout(20000),
-    headers: { Accept: "application/rss+xml,application/xml,text/xml" },
-  });
-  if (!res.ok) throw new Error("RSS_HTTP_" + res.status);
-  return parseNewsRSS(await readLimited(res, 1_500_000), q);
+  const cachedItems = previous.flatMap((cache) => matchesQuery(cache.items, q));
+  try {
+    const res = await fetch(u, {
+      signal: AbortSignal.timeout(q.issue ? 10000 : 20000),
+      headers: { Accept: "application/rss+xml,application/xml,text/xml" },
+    });
+    if (!res.ok) throw new Error("RSS_HTTP_" + res.status);
+    return [
+      ...parseNewsRSS(await readLimited(res, 1_500_000), q),
+      ...cachedItems,
+    ];
+  } catch (error) {
+    if (!previous.length) throw error;
+    stamp(
+      previous
+        .map((cache) => cache.fetchedAt)
+        .sort()
+        .at(-1)!,
+    );
+    return cachedItems;
+  }
 }
 function googleArticleKey(link: string) {
   try {
@@ -386,7 +471,9 @@ export async function collectNews(
     tasks.unshift({ name: "MediaMonitoring", run: () => monitoring(q, env) });
   if (
     q.to >= current &&
-    (q.topicId === "newebpay" || (!q.topicId && /藍新|newebpay/i.test(q.query)))
+    (q.topicId === "newebpay" ||
+      q.issue ||
+      (!q.topicId && /藍新|newebpay/i.test(q.query)))
   ) {
     tasks.push({
       name: supplementalSourceName,
