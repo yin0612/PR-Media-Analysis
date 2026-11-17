@@ -129,7 +129,7 @@ export default function AutoNews({
     }
   }
   return (
-    <div className="simple-app">
+    <div className="simple-app auto-news">
       <header className="simple-top">
         <a href="#/simple">
           <FileSpreadsheet size={23} />
@@ -288,26 +288,35 @@ export default function AutoNews({
           </div>
           {feed?.items.length ? (
             <div className="table-scroll">
-              <table className="simple-table">
-                <thead>
-                  <tr>
-                    <th>NO.</th>
-                    <th>日期</th>
-                    <th>媒體</th>
-                    <th>記者</th>
-                    <th>標題</th>
+              <table
+                className="simple-table auto-table"
+                role="table"
+                aria-label="新聞搜尋結果"
+              >
+                <thead role="rowgroup">
+                  <tr role="row">
+                    <th role="columnheader">NO.</th>
+                    <th role="columnheader">日期</th>
+                    <th role="columnheader">媒體</th>
+                    <th role="columnheader">記者</th>
+                    <th role="columnheader">標題</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody role="rowgroup">
                   {feed.items.map((a, i) => (
-                    <tr key={a.id}>
-                      <td>{i + 1}</td>
-                      <td>{taipeiDate(a.publishedAt).replaceAll("-", "/")}</td>
-                      <td>{a.publisher}</td>
-                      <td className={!a.author ? "muted" : ""}>
+                    <tr key={a.id} role="row">
+                      <td role="cell">{i + 1}</td>
+                      <td role="cell">
+                        {taipeiDate(a.publishedAt).replaceAll("-", "/")}
+                      </td>
+                      <td role="cell">{a.publisher}</td>
+                      <td role="cell">
+                        <span className="auto-mobile-label" aria-hidden="true">
+                          記者：
+                        </span>
                         {a.author || "來源未提供"}
                       </td>
-                      <td>
+                      <td role="cell">
                         <a href={a.url} target="_blank" rel="noreferrer">
                           {a.title}
                           <ExternalLink size={12} />

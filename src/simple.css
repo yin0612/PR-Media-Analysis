@@ -4,6 +4,37 @@
   background: #f5f7fa;
   color: #263c55;
 }
+.auto-news {
+  color: #18212b;
+}
+.auto-news .simple-heading h1 {
+  font-size: clamp(26px, 4vw, 32px);
+  font-weight: 700;
+}
+.auto-news .simple-sheet-heading h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+.auto-news .simple-heading p,
+.auto-news .simple-sheet-heading p,
+.auto-news .simple-sheet-heading p span,
+.auto-news .simple-list-select > span,
+.auto-news .simple-top > .text-button,
+.auto-news .simple-footer,
+.auto-news .simple-footer .text-button,
+.auto-news .simple-empty p,
+.auto-news .simple-notice {
+  font-size: 14px;
+}
+.auto-news .simple-list-select select,
+.auto-news .auto-dates input {
+  font-size: 16px;
+}
+.auto-news .simple-controls .primary,
+.auto-news .simple-controls .secondary,
+.auto-news .auto-search-row .secondary {
+  font-size: 14px;
+}
 .auto-search {
   margin: 0 0 25px;
 }
@@ -13,16 +44,22 @@
 }
 .auto-search-row > .search {
   flex: 1;
+  min-width: 0;
   max-width: 650px;
   background: #fff;
 }
-.auto-search-row input {
+.auto-search-row > .search:focus-within {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.auto-search-row .search input {
   width: 100%;
-  font-size: 13px;
+  min-width: 0;
+  font-size: 16px;
   padding: 12px 0;
 }
 .auto-search details {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--muted);
   margin-top: 12px;
 }
@@ -41,30 +78,25 @@
   flex-direction: column;
   gap: 8px;
 }
-.auto-dates input {
-  font-size: 12px;
-}
 .auto-dates span {
-  font-size: 10px;
   padding-bottom: 12px;
 }
 .auto-freshness {
-  font-size: 10px;
+  font-size: 14px;
   color: var(--muted);
-  white-space: nowrap;
 }
 .auto-freshness .status-dot {
   margin-right: 6px;
 }
 .auto-row-source {
   display: block;
-  font-size: 9px;
+  font-size: 14px;
   color: var(--muted);
   margin-top: 5px;
 }
 .auto-source-status {
   padding: 17px 24px;
-  font-size: 10px;
+  font-size: 14px;
   color: var(--muted);
   background: #f9fbfd;
   line-height: 1.9;
@@ -86,11 +118,45 @@
 .auto-source-status + .simple-footer {
   margin-top: 0;
 }
-.auto-search-row .secondary {
-  font-size: 12px;
+.auto-mobile-label {
+  display: none;
 }
-.simple-table th:last-child:nth-child(5) {
+.simple-table.auto-table {
+  min-width: 0;
+}
+.simple-table.auto-table th:last-child {
   width: auto;
+}
+.simple-table.auto-table th,
+.simple-table.auto-table td,
+.simple-table.auto-table td:first-child,
+.simple-table.auto-table td:nth-child(2) {
+  color: #18212b;
+  font-size: 16px;
+  line-height: 1.6;
+  vertical-align: top;
+}
+.simple-table.auto-table th {
+  font-weight: 650;
+}
+.simple-table.auto-table th:nth-child(2) {
+  width: 132px;
+}
+.simple-table.auto-table td:nth-child(2) {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.simple-table.auto-table td a {
+  color: #15395b;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.6;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+.simple-table.auto-table td a svg {
+  color: currentColor;
 }
 .simple-top {
   height: 76px;
@@ -497,5 +563,62 @@
   }
   .simple-app .modal-heading h2 {
     font-size: 17px;
+  }
+}
+@media (max-width: 820px) {
+  .auto-news .simple-top {
+    height: auto;
+    min-height: 66px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 12px 16px;
+  }
+  .auto-news .simple-controls > .button-row {
+    display: flex;
+  }
+  .auto-news .simple-sheet-heading {
+    gap: 8px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .auto-news .simple-sheet-heading p span {
+    display: block;
+    margin-left: 0;
+  }
+  .auto-table,
+  .auto-table tbody {
+    display: block;
+  }
+  .auto-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .auto-table tbody tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    border-top: 1px solid #dfe7f0;
+    padding: 16px 18px;
+  }
+  .auto-table td {
+    padding: 0;
+    border: 0;
+  }
+  .simple-table.auto-table td:first-child {
+    color: var(--muted);
+  }
+  .auto-table td:nth-child(3),
+  .auto-table td:nth-child(4),
+  .auto-table td:last-child {
+    grid-column: 1 / -1;
+  }
+  .auto-table td:last-child {
+    margin-top: 4px;
+  }
+  .auto-mobile-label {
+    display: inline;
   }
 }
