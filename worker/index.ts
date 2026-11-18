@@ -12,6 +12,7 @@ import type {
 import { publicUrl, readLimited, verifyDNS } from "./security";
 import { collectTopics, loadNews, newsQuery, ingestRSS } from "./news";
 import type { NewsEnv } from "./news";
+import { startSearch, searchStatus, updateSearch } from "./news-search";
 interface Env extends NewsEnv {
   ALLOWED_ORIGINS: string;
   ALLOWED_EMAILS: string;
@@ -19,6 +20,7 @@ interface Env extends NewsEnv {
   ACCESS_AUD: string;
   SERVICE_ACCESS_KEY?: string;
   NEWS_INGEST_KEY?: string;
+  NEWS_DISPATCH_TOKEN?: string;
   AI?: {
     run: (
       model: string,
@@ -326,16 +328,39 @@ export default {
           throw new HTTPError("RSS 資料格式錯誤");
         }
         return json(
-          await ingestRSS(
-            env,
-            String(payload.topic || ""),
-            String(payload.xml || ""),
-            payload.media,
-            payload.bodyMatches,
-          ),
+          payload.searchId
+            ? await updateSearch(env, payload)
+            : await ingestRSS(
+                env,
+                String(payload.topic || ""),
+                String(payload.xml || ""),
+                payload.media,
+                payload.bodyMatches,
+              ),
           200,
           cors,
         );
+      }
+      if (
+        url.pathname === "/api/news/search" &&
+        ["GET", "POST"].includes(req.method)
+      ) {
+        if (!env.NEWS_CACHE || !env.NEWS_LIMITER)
+          throw new HTTPError("新聞收集服務尚未設定", 503);
+        const client = req.headers.get("CF-Connecting-IP") || "unknown";
+        if (
+          !(await env.NEWS_LIMITER.limit({ key: "search:" + client })).success
+        )
+          throw new HTTPError("查詢較頻繁，請稍後重試", 429);
+        try {
+          const job =
+            req.method === "POST"
+              ? await startSearch(env, JSON.parse(await readLimited(req, 4000)))
+              : await searchStatus(env, url.searchParams.get("id") || "");
+          return json(job, req.method === "POST" ? 202 : 200, cors);
+        } catch (error) {
+          throw new HTTPError((error as Error).message);
+        }
       }
       if (url.pathname === "/api/news" && req.method === "GET") {
         if (!env.NEWS_CACHE || !env.NEWS_LIMITER)

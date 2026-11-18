@@ -26,6 +26,12 @@ interface SavedNewsSearch {
   from: string;
   to: string;
 }
+interface LiveSearch {
+  id: string;
+  status: "queued" | "running" | "complete" | "failed";
+  feed?: NewsFeed;
+  error?: string;
+}
 
 const savedSearchKey = "pr-media-news-searches:v1";
 const recentDay = (days = 0) =>
@@ -65,30 +71,70 @@ export default function AutoNews({
   const [saved, setSaved] = useState(readSavedSearches);
   const [saveNotice, setSaveNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
   const ticket = useRef(0);
+  const collecting = useRef(false);
   const active = useRef<NewsSearch>({ topic: "newebpay" });
-  async function load(input = active.current) {
+  async function load(input = active.current, refresh = false) {
     const id = ++ticket.current;
     active.current = input;
     setLoading(true);
+    collecting.current = true;
     setError("");
+    setProgress("");
     try {
       const params = new URLSearchParams(input);
-      const value = await request<NewsFeed>(apiUrl, "", "/api/news?" + params);
+      let value: NewsFeed;
+      if (!("topic" in input) || refresh) {
+        setFeed(null);
+        setProgress("正在啟動新聞查詢…");
+        let job = await request<LiveSearch>(
+          apiUrl,
+          "",
+          "/api/news/search",
+          input,
+        );
+        const deadline = Date.now() + 10 * 60000;
+        while (
+          ["queued", "running"].includes(job.status) &&
+          Date.now() < deadline
+        ) {
+          if (id !== ticket.current) return;
+          setProgress(
+            job.status === "queued"
+              ? "正在等候新聞收集，完成後會自動顯示。"
+              : "正在搜尋新聞並讀取原文，完成後會自動顯示。",
+          );
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+          if (id !== ticket.current) return;
+          job = await request<LiveSearch>(
+            apiUrl,
+            "",
+            "/api/news/search?id=" + job.id,
+          );
+        }
+        if (job.status !== "complete" || !job.feed)
+          throw new Error(job.error || "查詢等候逾時，請按更新清單重試。");
+        value = job.feed;
+      } else value = await request<NewsFeed>(apiUrl, "", "/api/news?" + params);
       if (id !== ticket.current) return;
       setFeed(value);
     } catch (e) {
       if (id === ticket.current) setError((e as Error).message);
     } finally {
-      if (id === ticket.current) setLoading(false);
+      if (id === ticket.current) {
+        setLoading(false);
+        collecting.current = false;
+        setProgress("");
+      }
     }
   }
   useEffect(() => {
     void load();
     const timer = setInterval(() => {
-      void load();
+      if (!collecting.current) void load();
     }, 5 * 60000);
     return () => {
       clearInterval(timer);
@@ -293,7 +339,7 @@ export default function AutoNews({
             <button
               className="secondary"
               disabled={loading}
-              onClick={() => void load()}
+              onClick={() => void load(active.current, true)}
             >
               <RefreshCw size={16} className={loading ? "spin" : ""} />
               {loading ? "載入中…" : "更新清單"}
@@ -391,6 +437,11 @@ export default function AutoNews({
             {saveNotice && <span role="status">{saveNotice}</span>}
           </div>
         </form>
+        {progress && (
+          <div className="simple-notice" role="status">
+            {progress}
+          </div>
+        )}
         {error && (
           <div className="simple-notice auto-warning" role="alert">
             {error}

@@ -17,11 +17,81 @@ const localDay = (offset = 0) =>
     .toISOString()
     .slice(0, 10);
 const today = localDay();
-const topics = defaultNewsTopics.map((topic) => ({
-  ...topic,
-  from: topic.from || localDay(-29),
-  to: topic.to && topic.to < today ? topic.to : today,
-}));
+const searchId = process.env.NEWS_SEARCH_ID || "";
+let requested = null;
+if (searchId) {
+  if (!/^[a-f0-9]{64}$/.test(searchId))
+    throw new Error("Invalid query identifier");
+  const values = JSON.parse(process.env.NEWS_SEARCH_JSON || "{}");
+  const preset = values.topic
+    ? defaultNewsTopics.find((topic) => topic.id === values.topic)
+    : null;
+  if (values.topic && !preset) throw new Error("Unknown topic");
+  const issue =
+    preset?.issue ||
+    (typeof values.issue === "string" ? values.issue.trim() : undefined);
+  const query = issue ? `藍新 ${issue}` : String(values.q || "").trim();
+  if (query.length < 2 || query.length > 100 || /[<>"\x00-\x1f]/.test(query))
+    throw new Error("Invalid public query");
+  for (const date of [values.from, values.to])
+    if (
+      typeof date !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !Number.isFinite(Date.parse(date)) ||
+      new Date(date).toISOString().slice(0, 10) !== date
+    )
+      throw new Error("Invalid query date");
+  if (
+    values.from > values.to ||
+    values.to > today ||
+    Date.parse(values.to) - Date.parse(values.from) > 365 * 86400000
+  )
+    throw new Error("Invalid query period");
+  requested = {
+    ...preset,
+    query: preset?.query || query,
+    issue,
+    from: values.from,
+    to: values.to,
+  };
+}
+const topics = requested
+  ? [
+      {
+        id: requested.id || "",
+        query: requested.query,
+        issue: requested.issue,
+        issueAliases: requested.issueAliases,
+        from: requested.from,
+        to: requested.to,
+        sites: [...new Set([...bodySearchSitesForRequest()])],
+      },
+    ]
+  : defaultNewsTopics.map((topic) => ({
+      ...topic,
+      from: topic.from || localDay(-29),
+      to: topic.to && topic.to < today ? topic.to : today,
+    }));
+function bodySearchSitesForRequest() {
+  return [
+    ...supplementalNewsSources.map((source) => source.site),
+    "cna.com.tw",
+    "udn.com",
+    "money.udn.com",
+    "ctwant.com",
+    "news.pchome.com.tw",
+    "n.yam.com",
+    "today.line.me",
+    "tw.news.yahoo.com",
+    "tw.stock.yahoo.com",
+    "chinatimes.com",
+    "ctee.com.tw",
+    "investor.com.tw",
+    "money-link.com.tw",
+    "knews.com.tw",
+    "idn.com.tw",
+  ];
+}
 const bodySearchSites = [
   "ctwant.com",
   "money.udn.com",
@@ -179,11 +249,17 @@ async function collectBodyFeeds(topic) {
             "today.line.me",
           ]
         : []);
-  const terms = topic.sites
-    ? `"${topic.issue}"`
-    : topic.issue
-      ? newsGoogleTerms(topic.query, topic.id, topic.issue, topic.issueAliases)
-      : '"藍新"';
+  const terms =
+    topic.sites && topic.issue && !searchId
+      ? `"${topic.issue}"`
+      : topic.issue || searchId
+        ? newsGoogleTerms(
+            topic.query,
+            topic.id,
+            topic.issue,
+            topic.issueAliases,
+          )
+        : '"藍新"';
   const feeds = await inBatches(sites, 4, async (site) => {
     try {
       const url = googleUrl(topic, `site:${site} ${terms}`);
@@ -197,6 +273,25 @@ async function collectBodyFeeds(topic) {
 }
 
 let failed = 0;
+async function reportSearch(stage, fields = {}) {
+  let response;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    response = await fetch(base + "/api/news/ingest", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ searchId, stage, ...fields }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (response.ok || response.status === 401) break;
+    if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 15000));
+  }
+  if (!response?.ok) throw new Error(`Query update HTTP ${response?.status}`);
+  return response.json();
+}
+if (searchId) await reportSearch("running");
 for (const topic of topics) {
   if (topic.from > topic.to) continue;
   try {
@@ -251,27 +346,32 @@ for (const topic of topics) {
       }));
     if (!xml && !media.length && !body.matches.length && !archived.length)
       throw new Error("No RSS feeds available");
-    const r = await fetch(base + "/api/news/ingest", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        topic: topic.id,
-        xml,
-        media,
-        bodyMatches: [...archived, ...body.matches],
-      }),
-      signal: AbortSignal.timeout(90000),
-    });
-    const data = await r.json();
-    if (!r.ok || data.status === "failed")
-      throw new Error(`Ingest HTTP ${r.status}`);
+    const payload = {
+      topic: topic.id,
+      xml,
+      media,
+      bodyMatches: [...archived, ...body.matches],
+    };
+    const r = searchId
+      ? null
+      : await fetch(base + "/api/news/ingest", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(90000),
+        });
+    const data = searchId
+      ? await reportSearch("complete", payload)
+      : await r.json();
+    if ((r && !r.ok) || data.status === "failed")
+      throw new Error(`Ingest HTTP ${r?.status || 400}`);
     console.log(
       JSON.stringify({
         topic: topic.id,
-        count: data.count,
+        count: data.feed?.items?.length ?? data.count,
         status: data.status,
         updatedAt: data.updatedAt,
         supplementalFeeds: media.length,
@@ -283,6 +383,7 @@ for (const topic of topics) {
     );
   } catch (e) {
     failed++;
+    if (searchId) await reportSearch("failed").catch(() => {});
     console.error(`News update failed for ${topic.id}: ${e.message}`);
   }
 }

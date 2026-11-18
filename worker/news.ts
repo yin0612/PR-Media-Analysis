@@ -586,11 +586,14 @@ export async function ingestRSS(
   xml: string,
   media?: unknown,
   bodyMatches?: unknown,
+  searchQuery?: NewsQuery,
 ) {
-  const q = newsQuery(
-    new URL("https://news.invalid/?topic=" + encodeURIComponent(topicId)),
-  );
-  if (!q.topicId) throw new Error("僅允許更新預設新聞主題");
+  const q =
+    searchQuery ||
+    newsQuery(
+      new URL("https://news.invalid/?topic=" + encodeURIComponent(topicId)),
+    );
+  if (!q.topicId && !searchQuery) throw new Error("僅允許更新已建立的新聞查詢");
   const verified = bodyItems(bodyMatches, q);
   const items =
     xml || verified.length
@@ -617,7 +620,7 @@ export async function ingestRSS(
   if (!items && !mediaItems.size) throw new Error("來源未提供有效 RSS");
   if (items)
     await env.NEWS_CACHE!.put(
-      "rss:v1:" + q.topicId,
+      "rss:v1:" + (q.topicId || q.key),
       JSON.stringify({ items, fetchedAt }),
     );
   if (mediaItems.size) {
@@ -637,7 +640,29 @@ export async function ingestRSS(
       } satisfies CachedMedia),
     );
   }
-  const feed = await collectNews(env, q);
+  const feed = searchQuery
+    ? {
+        query: q.query,
+        topicId: q.topicId,
+        from: q.from,
+        to: q.to,
+        items: mergeNews([
+          ...(items || []),
+          ...matchesQuery((await saved(env, q.key))?.items || [], q),
+        ]),
+        lastAttemptAt: fetchedAt,
+        lastSuccessAt: fetchedAt,
+        status: "ready" as const,
+        sources: [
+          { name: "即時新聞與原文查詢", ok: true, updatedAt: fetchedAt },
+        ],
+        note: "依本次關鍵字和日期重新搜尋新聞並讀取可公開存取的原文。各站收錄與讀取情況會影響結果。",
+      }
+    : await collectNews(env, q);
+  if (searchQuery)
+    await env.NEWS_CACHE!.put("news:v1:" + q.key, JSON.stringify(feed), {
+      expirationTtl: 7 * 86400,
+    });
   return {
     topic: topicId,
     count: feed.items.length,

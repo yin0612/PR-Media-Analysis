@@ -3,10 +3,19 @@ on:
   schedule:
     - cron: "37 * * * *"
   workflow_dispatch:
+    inputs:
+      search_id:
+        description: Query identifier
+        required: false
+        type: string
+      search_json:
+        description: Public news search conditions
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
-  group: automatic-news
+  group: automatic-news-${{ inputs.search_id || 'scheduled' }}
   cancel-in-progress: false
 jobs:
   update:
@@ -25,3 +34,5 @@ jobs:
       - run: node scripts/update-news.mjs
         env:
           NEWS_INGEST_KEY: ${{ secrets.NEWS_INGEST_KEY }}
+          NEWS_SEARCH_ID: ${{ inputs.search_id }}
+          NEWS_SEARCH_JSON: ${{ inputs.search_json }}
