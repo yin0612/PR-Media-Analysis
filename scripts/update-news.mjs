@@ -30,7 +30,8 @@ if (searchId) {
   const issue =
     preset?.issue ||
     (typeof values.issue === "string" ? values.issue.trim() : undefined);
-  const query = issue ? `藍新 ${issue}` : String(values.q || "").trim();
+  const query =
+    preset?.query || (issue ? `藍新 ${issue}` : String(values.q || "").trim());
   if (query.length < 2 || query.length > 100 || /[<>"\x00-\x1f]/.test(query))
     throw new Error("Invalid public query");
   for (const date of [values.from, values.to])
